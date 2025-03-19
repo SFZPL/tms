@@ -9,6 +9,50 @@ import logging
 from typing import Dict, List, Tuple, Optional, Any, Union
 from google_drive import create_folder, get_folder_link, get_folder_url
 from config import get_secret
+from debug_utils import inject_debug_page, debug_function, SystemDebugger
+
+
+def add_debug_sidebar(debugger: SystemDebugger):
+    """
+    Add a debug sidebar option to the existing sidebar
+    """
+    if st.session_state.user['username'] == 'admin':
+        st.sidebar.markdown("---")
+        st.sidebar.subheader("🐞 Debugging")
+        if st.sidebar.button("System Debug Dashboard"):
+            # Switch to debug mode
+            st.session_state.debug_mode = "system_debug"
+
+def handle_debug_mode(debugger: SystemDebugger):
+    """
+    Handle the system debug mode rendering
+    """
+    if st.session_state.get("debug_mode") == "system_debug":
+        debugger.streamlit_debug_page()
+        # Add a button to return to normal mode
+        if st.button("Return to Normal Mode"):
+            st.session_state.pop("debug_mode")
+            st.rerun()
+        return True
+    return False
+
+def setup_debugging(main_app):
+    """
+    Set up debugging for the main Streamlit application
+    """
+    # Inject debug handlers and get debugger instance
+    debugger = inject_debug_page(main_app)
+    
+    # Modify the sidebar render function to add debug option
+    original_render_sidebar = main_app.render_sidebar
+    
+    def modified_render_sidebar():
+        original_render_sidebar()
+        add_debug_sidebar(debugger)
+    
+    main_app.render_sidebar = modified_render_sidebar
+    
+    return debugger
 
 # Replace environment variables with secrets
 ODOO_URL = get_secret("ODOO_URL")
@@ -93,6 +137,10 @@ def render_sidebar():
                     st.session_state.debug_mode = "task_fields"
                     st.rerun()
                 
+                # New debug dashboard option
+                if st.button("System Debug Dashboard"):
+                    st.session_state.debug_mode = "system_debug"
+                    st.rerun()
         st.markdown("---")
         st.caption("© 2025 Task Management System")
 
@@ -2247,6 +2295,9 @@ def designer_selection_page():
 # MAIN
 # -------------------------------
 def main():
+    if inject_debug_page():
+        return
+    
     # Render sidebar
     render_sidebar()
     
@@ -2289,5 +2340,6 @@ def main():
                 retainer_parent_task_page()
             else:
                 retainer_subtask_page()
+
 if __name__ == "__main__":
     main()

@@ -3,6 +3,8 @@ import pickle
 import base64
 import logging
 import json
+# Add at the top of both gmail_integration.py and google_drive.py
+import time
 import tempfile
 import streamlit as st
 from pathlib import Path
@@ -17,6 +19,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
 from email import encoders
 from config import get_secret, get_google_credentials  # Import from centralized config
+from google_drive import is_running_locally, get_deployed_url
 
 # Add to the top of google_drive.py and gmail_integration.py
 from streamlit.components.v1 import components
@@ -53,7 +56,12 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Define constants
-SCOPES = ['https://www.googleapis.com/auth/gmail.readonly', 'https://www.googleapis.com/auth/gmail.send']
+# Use identical SCOPES in both files
+SCOPES = [
+    'https://www.googleapis.com/auth/gmail.readonly', 
+    'https://www.googleapis.com/auth/gmail.send',
+    'https://www.googleapis.com/auth/drive.file'
+]
 PARENT_FOLDER_ID = get_secret("google.drive_parent_folder_id", "")
 
 def get_streamlit_oauth_flow(credentials_dict, scopes):
@@ -108,71 +116,135 @@ def get_streamlit_oauth_flow(credentials_dict, scopes):
     return None
 
 def get_gmail_service():
-    """
-    Authenticates with Gmail API and returns a service object.
-    Uses session state instead of token files for Streamlit Cloud.
-    """
-    try:
-        # Try to get credentials from session state
-        creds = st.session_state.get("gmail_credentials", None)
+    """Enhanced Gmail service authentication with detailed logging"""
+    st.write("Starting Gmail Authentication")
+    
+    # Clear existing credentials if they seem problematic
+    if "gmail_credentials" in st.session_state:
+        st.write("Existing Gmail credentials found. Checking validity...")
         
-        # Check if credentials need to be refreshed or created
-        if not creds or not creds.valid:
-            if creds and creds.expired and creds.refresh_token:
-                logger.info("Refreshing expired credentials")
+        # Add more validation checks
+        creds = st.session_state.gmail_credentials
+        
+        if not creds or not hasattr(creds, 'valid'):
+            st.write("Removing invalid credentials")
+            del st.session_state.gmail_credentials
+    """Authenticates with Gmail API using appropriate flow based on environment."""
+    # Debug info
+    with st.expander("Gmail Authentication Debugging", expanded=False):
+        st.write("Session state keys:", list(st.session_state.keys()))
+        st.write("Query parameters:", st.query_params)
+    
+    # Check if we already have credentials
+    if "gmail_credentials" in st.session_state:
+        creds = st.session_state.gmail_credentials
+        # Refresh token if expired
+        if creds and creds.expired and creds.refresh_token:
+            try:
                 creds.refresh(Request())
-            else:
-                logger.info("Creating new credentials")
-                
-                # Get credentials dictionary
-                credentials_dict = get_google_credentials()
-                if not credentials_dict:
-                    logger.error("No credentials available")
-                    st.error("Gmail credentials not found. Check configuration.")
-                    return None
-                
-                # Create flow
-                flow = get_streamlit_oauth_flow(credentials_dict, SCOPES)
-                if not flow:
-                    st.error("Failed to create authentication flow")
-                    return None
-                
-                # Generate the authorization URL
-                auth_url, _ = flow.authorization_url(prompt='consent')
-                
-                # Display instructions to the user
-                st.info("Authentication required for Gmail access.")
-                st.markdown(f"1. Click this link to authorize: [Authorize Gmail Access]({auth_url})")
-                st.markdown("2. Sign in and grant permission")
-                st.markdown("3. After authentication, you'll be redirected back to the app")
-                st.markdown("4. If you're not redirected automatically, copy the authorization code from the URL")
-                
-                # Get the authorization code from the user
-                auth_code = st.text_input("If not redirected, enter the authorization code:", key="gmail_auth_code")
-                
-                if not auth_code:
-                    return None
-                    
-                # Exchange the authorization code for credentials
-                try:
-                    flow.fetch_token(code=auth_code)
-                    creds = flow.credentials
-                    st.success("Gmail authentication successful!")
-                except Exception as e:
-                    st.error(f"Authentication error: {e}")
-                    return None
+                st.session_state.gmail_credentials = creds
+                logger.info("Gmail credentials refreshed successfully")
+            except Exception as e:
+                logger.error(f"Error refreshing Gmail credentials: {e}")
+                del st.session_state.gmail_credentials
+                st.rerun()
+    else:
+        # Load client config
+        try:
+            client_config = get_google_credentials()
+            if not client_config:
+                logger.error("Google API credentials not found")
+                st.error("Gmail credentials not found. Check configuration.")
+                return None
             
-            # Save credentials to session state
-            st.session_state["gmail_credentials"] = creds
-        
+            # Create a temporary file for the credentials
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.json') as temp:
+                temp.write(json.dumps(client_config).encode("utf-8"))
+                temp_path = temp.name
+            
+            try:
+                # Detect environment (local vs deployed)
+                is_local = is_running_locally()
+                
+                if is_local:
+                    # Local development: use local server approach
+                    st.info("Running in local development mode. Using local OAuth flow.")
+                    flow = InstalledAppFlow.from_client_secrets_file(
+                        temp_path, 
+                        SCOPES
+                    )
+                    # Display a message explaining what will happen
+                    st.info("A browser window will open to complete authentication.")
+                    creds = flow.run_local_server(port=0)
+                    st.session_state.gmail_credentials = creds
+                    st.success("Authentication completed! You can now use Gmail.")
+                else:
+                    # Deployed environment: use redirect URI approach
+                    # Get the deployment URL
+                    base_url = get_deployed_url()
+                    redirect_uri = f"{base_url}"  # No trailing slash or path
+                    
+                    logger.info(f"Using redirect URI for Gmail: {redirect_uri}")
+                    
+                    flow = InstalledAppFlow.from_client_secrets_file(
+                        temp_path, 
+                        SCOPES,
+                        redirect_uri=redirect_uri
+                    )
+                    
+                    # Check for authorization code in query parameters
+                    query_params = st.query_params
+                    if "code" in query_params:
+                        try:
+                            code = query_params["code"]
+                            logger.info("Exchanging code for token...")
+                            flow.fetch_token(code=code)
+                            st.session_state.gmail_credentials = flow.credentials
+                            
+                            # Clean up the URL
+                            try:
+                                st.set_query_params()
+                            except:
+                                pass
+                                
+                            st.success("Gmail authentication successful!")
+                            time.sleep(1)
+                            st.rerun()
+                        except Exception as e:
+                            logger.error(f"Error exchanging code: {e}")
+                            st.error(f"Authentication error: {str(e)}")
+                            auth_url, _ = flow.authorization_url(prompt='consent')
+                            st.markdown(f"[Click here to try again]({auth_url})")
+                            return None
+                    else:
+                        # Start the auth flow
+                        auth_url, _ = flow.authorization_url(prompt='consent', access_type='offline')
+                        st.warning("Authentication required for Gmail access.")
+                        st.markdown(f"[Click here to authenticate with Gmail]({auth_url})")
+                        return None
+            finally:
+                # Clean up temp file
+                try:
+                    os.unlink(temp_path)
+                except Exception as e:
+                    logger.warning(f"Error removing temp file: {e}")
+                
+        except Exception as e:
+            logger.error(f"Error in Gmail authentication setup: {e}")
+            st.error(f"Error setting up Gmail authentication: {str(e)}")
+            return None
+
+    try:
         # Build and return Gmail service
-        service = build('gmail', 'v1', credentials=creds)
+        service = build('gmail', 'v1', credentials=st.session_state.gmail_credentials)
         logger.info("Gmail service created successfully")
         return service
         
     except Exception as e:
-        logger.error(f"Error creating Gmail service: {e}", exc_info=True)
+        logger.error(f"Error building Gmail service: {e}")
         st.error(f"Error connecting to Gmail: {str(e)}")
+        if "gmail_credentials" in st.session_state:
+            del st.session_state.gmail_credentials
         return None
 
 def fetch_recent_emails(service: Any, total_emails: int = 50, query: str = "") -> List[Dict[str, Any]]:

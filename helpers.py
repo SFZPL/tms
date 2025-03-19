@@ -32,27 +32,46 @@ OdooRecord = Dict[str, Any]
 @st.cache_resource(show_spinner=False)
 def get_odoo_connection() -> OdooConnection:
     """
-    Creates and returns a connection to the Odoo API.
-    
-    Returns:
-        Tuple containing user ID and models proxy, or (None, None) if connection fails
+    Creates and returns a connection to the Odoo API with enhanced logging.
     """
     try:
+        # Log all connection details (be careful with sensitive info)
+        st.write(f"Attempting Odoo Connection:")
+        st.write(f"URL: {ODOO_URL}")
+        st.write(f"DB: {ODOO_DB}")
+        st.write(f"Username: {ODOO_USERNAME}")
+        
         common = xmlrpc.client.ServerProxy(f"{ODOO_URL}/xmlrpc/2/common")
+        
+        # Add more detailed logging
+        st.write("Attempting authentication...")
+        
         uid = common.authenticate(ODOO_DB, ODOO_USERNAME, ODOO_PASSWORD, {})
         
         if not uid:
-            st.error("Failed to authenticate with Odoo. Check credentials.")
-            logger.error("Odoo authentication failed")
+            st.error("Odoo Authentication Failed!")
+            logger.error("Odoo authentication failed - check credentials")
             return None, None
             
         models = xmlrpc.client.ServerProxy(f"{ODOO_URL}/xmlrpc/2/object")
+        
+        st.success(f"Successfully connected to Odoo (UID: {uid})")
         logger.info(f"Successfully connected to Odoo (UID: {uid})")
+        
         return uid, models
         
     except Exception as e:
-        st.error(f"Error connecting to Odoo: {e}")
-        logger.error(f"Error connecting to Odoo: {e}", exc_info=True)
+        st.error(f"Comprehensive Odoo Connection Error: {e}")
+        logger.error(f"Comprehensive Odoo Connection Error: {e}", exc_info=True)
+        
+        # Provide more context about the error
+        import ssl
+        if isinstance(e, ssl.SSLCertVerificationError):
+            st.warning("SSL Certificate Verification Failed. This might be due to:")
+            st.warning("1. Self-signed certificate")
+            st.warning("2. Hostname mismatch")
+            st.warning("3. Expired certificate")
+        
         return None, None
 
 def authenticate_odoo() -> OdooConnection:

@@ -44,26 +44,13 @@ def get_secret(key: str, default: Any = None) -> Any:
     # Fall back to environment variables
     return os.getenv(key, default)
 
-def get_google_credentials() -> Optional[Dict]:
-    """
-    Get Google API credentials as a dictionary.
-    For Streamlit Cloud, this should be stored in secrets.
-    
-    Returns:
-        Credentials dictionary or None if not found
-    """
+def get_google_credentials():
+    """Get Google API credentials as a dictionary."""
     try:
-        # First try to get JSON from secrets
-        creds_json = get_secret("google.credentials.json")
-        if creds_json:
-            return json.loads(creds_json)
-            
-        # Then try to get from environment
-        creds_env = os.getenv("GOOGLE_CREDENTIALS_JSON")
-        if creds_env:
-            return json.loads(creds_env)
-            
-        logger.error("Google credentials not found in secrets or environment")
+        # Get client config from Streamlit secrets
+        client_config_str = st.secrets.get("gcp", {}).get("client_config")
+        if client_config_str:
+            return json.loads(client_config_str)
         return None
     except Exception as e:
         logger.error(f"Error parsing Google credentials: {e}")
