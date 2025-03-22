@@ -10,6 +10,8 @@ from typing import Dict, List, Tuple, Optional, Any, Union
 from google_drive import create_folder, get_folder_link, get_folder_url
 from config import get_secret
 from debug_utils import inject_debug_page, debug_function, SystemDebugger
+import google_auth
+from datetime import datetime
 
 
 def add_debug_sidebar(debugger: SystemDebugger):
@@ -88,7 +90,9 @@ from helpers import (
     get_retainer_projects,
     get_retainer_customers,
     get_project_id_by_name,
-    update_task_designer
+    update_task_designer,
+    get_odoo_connection,
+    check_odoo_connection
 )
 from gmail_integration import get_gmail_service, fetch_recent_emails
 from azure_llm import analyze_email
@@ -112,23 +116,41 @@ st.set_page_config(
 # SIDEBAR
 # -------------------------------
 def render_sidebar():
+    from session_manager import SessionManager
+    
     with st.sidebar:
         st.title("Task Management")
         
         if "logged_in" in st.session_state and st.session_state.logged_in:
-            st.success(f"Logged in as: {st.session_state.user['username']}")
+            session_info = SessionManager.get_session_info()
+            st.success(f"Logged in as: {session_info['username']}")
+            
+            # Show session info
+            time_remaining = session_info.get('time_remaining', 0)
+            if time_remaining > 0:
+                st.caption(f"Session expires in: {time_remaining:.1f} hours")
+            else:
+                st.warning("Session expiring soon")
             
             # Navigation
             st.subheader("Navigation")
             if st.button("Home"):
-                for key in ["form_type", "adhoc_sales_order_done", "adhoc_parent_input_done", 
-                           "retainer_parent_input_done", "subtask_index"]:
-                    st.session_state.pop(key, None)
+                SessionManager.clear_flow_data()
                 st.rerun()
+            
+            # Connection management
+            st.subheader("Connection")
+            if st.button("Reconnect to Odoo"):
+                with st.spinner("Reconnecting..."):
+                    uid, models = get_odoo_connection(force_refresh=True)
+                    if uid and models:
+                        st.success("Reconnected successfully!")
+                    else:
+                        st.error("Failed to reconnect to Odoo.")
                 
             # Logout button
             if st.button("Logout"):
-                st.session_state.clear()
+                SessionManager.logout()
                 st.rerun()
 
             if st.session_state.user['username'] == 'admin':  # Only show to admin users
@@ -143,11 +165,37 @@ def render_sidebar():
                     st.rerun()
         st.markdown("---")
         st.caption("© 2025 Task Management System")
-
 # -------------------------------
 # 1) LOGIN PAGE
 # -------------------------------
+def validate_session():
+    """
+    Validates the current session and handles expiry
+    
+    Returns:
+        True if session is valid, False if expired or not logged in
+    """
+    from session_manager import SessionManager
+    
+    # Initialize and check expiry
+    if not SessionManager.check_session_expiry():
+        return False
+    
+    # Validate Odoo connection
+    if not check_odoo_connection():
+        with st.spinner("Reconnecting to Odoo..."):
+            uid, models = get_odoo_connection(force_refresh=True)
+            if not uid or not models:
+                st.error("Lost connection to Odoo. Please log in again.")
+                SessionManager.logout()
+                return False
+    
+    return True
+
 def login_page():
+    from session_manager import SessionManager
+    SessionManager.update_activity()  # Add this line
+    
     # Create columns with the middle one wider for content
     col1, col2, col3 = st.columns([1, 2, 1])
     
@@ -156,32 +204,29 @@ def login_page():
         st.subheader("Login to Task Management System")
         
         with st.form("login_form"):
-            username = st.text_input("Username", key="username")
-            password = st.text_input("Password", type="password", key="password")
+            username = st.text_input("Username", key="username_input")
+            password = st.text_input("Password", type="password", key="password_input")
             submit = st.form_submit_button("Login")
             
             if submit:
-                # In a production app, use proper authentication
+                # Validate credentials
                 if username and password:
-                    # For demo purposes only - in production, use a secure authentication method
-                    # Replace with a secure authentication system
-                    # Update login credentials
-                    if ((username == get_secret("APP_USERNAME", "admin")) 
-                        and 
-                        (password == get_secret("APP_PASSWORD", "password"))):                        
-                        # Authentication logic                        
-                        st.session_state.logged_in = True
-                        st.session_state.user = {"username": username, "session_id": str(uuid.uuid4())}
+                    valid_username = get_secret("APP_USERNAME", "admin")
+                    valid_password = get_secret("APP_PASSWORD", "password")
+                    
+                    if username == valid_username and password == valid_password:
+                        # Log in user and set session
+                        SessionManager.login(username, expiry_hours=8)
                         
                         # Set up Odoo connection on login
-                        uid, models = authenticate_odoo()
-                        if uid and models:
-                            st.session_state.odoo_uid = uid
-                            st.session_state.odoo_models = models
-                            st.success("Login successful!")
-                            st.rerun()
-                        else:
-                            st.error("Connected to the application but Odoo authentication failed. Check Odoo connection.")
+                        with st.spinner("Connecting to Odoo..."):
+                            uid, models = get_odoo_connection(force_refresh=True)
+                            if uid and models:
+                                st.success("Login successful!")
+                                st.rerun()
+                            else:
+                                st.error("Connected to the application but Odoo authentication failed. Check Odoo connection.")
+                                SessionManager.logout()
                     else:
                         st.error("Invalid credentials. Please try again.")
                 else:
@@ -268,6 +313,15 @@ def sales_order_page():
         selected_company = st.session_state.get("selected_company", "")
         st.markdown(f"**Selected Company:** {selected_company}")
     
+    # Add this code to detect company changes and force refresh
+    if "last_company_for_sales_orders" in st.session_state:
+        if st.session_state.last_company_for_sales_orders != selected_company:
+            # Company changed, force refresh sales orders
+            st.session_state.refresh_sales_orders = True
+            
+    # Update the tracked company
+    st.session_state.last_company_for_sales_orders = selected_company
+
     # Connect to Odoo
     if "odoo_uid" not in st.session_state or "odoo_models" not in st.session_state:
         with st.spinner("Connecting to Odoo..."):
@@ -740,6 +794,8 @@ def adhoc_subtask_page():
 # Finalize: Create Parent Task & Subtasks in Odoo
 # -------------------------------
 def finalize_adhoc_subtasks():
+    from session_manager import SessionManager
+    SessionManager.update_activity()  # Add this line
     uid = st.session_state.odoo_uid
     models = st.session_state.odoo_models
 
@@ -1060,7 +1116,12 @@ def retainer_parent_task_page():
         with st.expander("Guidelines", expanded=False):
             guidelines_options = get_guidelines_odoo(models, uid)
             if guidelines_options:
-                retainer_guidelines = st.selectbox("Guidelines", guidelines_options)
+                # Use format_func to display only the name while storing the tuple
+                retainer_guidelines = st.selectbox(
+                    "Guidelines", 
+                    options=guidelines_options,
+                    format_func=lambda x: x[1]  # Display the name part
+                )
             else:
                 retainer_guidelines = st.text_area("Guidelines", height=100)
         
@@ -1157,7 +1218,8 @@ def retainer_subtask_page():
             if service_category_1_options:
                 retainer_service_category_1 = st.selectbox(
                     "Service Category 1", 
-                    [opt[1] if isinstance(opt, list) and len(opt) > 1 else opt for opt in service_category_1_options]
+                    options=service_category_1_options,
+                    format_func=lambda x: x[1] if isinstance(x, tuple) and len(x) > 1 else str(x)
                 )
             else:
                 retainer_service_category_1 = st.text_input("Service Category 1")
@@ -1169,7 +1231,8 @@ def retainer_subtask_page():
             if service_category_2_options:
                 retainer_service_category_2 = st.selectbox(
                     "Service Category 2", 
-                    [opt[1] if isinstance(opt, list) and len(opt) > 1 else opt for opt in service_category_2_options]
+                    options=service_category_2_options,
+                    format_func=lambda x: x[1] if isinstance(x, tuple) and len(x) > 1 else str(x)
                 )
             else:
                 retainer_service_category_2 = st.text_input("Service Category 2")
@@ -1181,45 +1244,12 @@ def retainer_subtask_page():
         
         # Designer suggestion and submit buttons
         col1, col2 = st.columns(2)
-        with col1:
-            suggest_designer = st.form_submit_button("Suggest Best Designer")
+
         with col2:
             submit_request = st.form_submit_button("Submit Request")
         
-        if suggest_designer:
-            request_info = (
-                f"Parent Task (Retainer)\n"
-                f"Company: {selected_company}\n"
-                f"Project: {parent_project_name}\n"
-                f"Parent Task Title: {parent_task_title}\n"
-                f"Customer: {retainer_customer}\n"
-                f"Target Language: {retainer_target_language}\n"
-                f"Guidelines: {retainer_guidelines}\n"
-                f"Client Success Executive: {retainer_client_success_exec}\n"
-                f"Request Receipt (Parent): {retainer_request_receipt_dt}\n"
-                f"Internal Due Date & Time: {retainer_internal_dt}\n\n"
-                "Subtask (Retainer)\n"
-                f"Subtask Title: {subtask_title}\n"
-                f"Service Category 1: {retainer_service_category_1}\n"
-                f"No. of Design Units SC1: {no_of_design_units_sc1}\n"
-                f"Service Category 2: {retainer_service_category_2}\n"
-                f"No. of Design Units SC2: {no_of_design_units_sc2}\n"
-                f"Client Due Date (Subtask): {retainer_client_due_date_subtask}\n"
-            )
-            
-            with st.spinner("Finding the best designer..."):
-                try:
-                    designers_df = load_designers()
-                    suggestion = suggest_best_designer(request_info, designers_df, max_designers=5)
-                    st.session_state.selected_designer = suggestion
-                    st.success("Designer suggestion ready!")
-                    
-                    # Display the suggestion in a highlighted box
-                    st.info(f"Suggested Designer: {suggestion}")
-                except Exception as e:
-                    st.error(f"Error suggesting designer: {str(e)}")
-                    logger.error(f"Error suggesting designer: {e}", exc_info=True)
         
+        # SUBMIT BUTTON HANDLER - Replace the existing submit_request button handler
         if submit_request:
             # Validate inputs
             if not subtask_title:
@@ -1232,96 +1262,224 @@ def retainer_subtask_page():
                 st.error(f"Could not find a project with name: {parent_project_name}")
                 return
                 
-            # Extract user ID from the tuple if it's in that format
-            user_id = retainer_client_success_exec[0] if isinstance(retainer_client_success_exec, tuple) else retainer_client_success_exec
-            
-            # Ensure IDs are integers
-            try:
-                if not isinstance(project_id, int):
+            # Ensure project_id is integer
+            if not isinstance(project_id, int):
+                try:
                     project_id = int(project_id)
-                if not isinstance(user_id, int):
+                except (ValueError, TypeError) as e:
+                    st.error(f"Invalid project ID format: {e}")
+                    logger.error(f"Invalid project ID format: {project_id}, error: {e}")
+                    return
+            
+            # Handle user ID
+            user_id = retainer_client_success_exec[0] if isinstance(retainer_client_success_exec, tuple) else retainer_client_success_exec
+            if not isinstance(user_id, int):
+                try:
                     user_id = int(user_id)
-            except (ValueError, TypeError) as e:
-                st.error(f"Invalid ID format: {e}")
-                return
+                except (ValueError, TypeError) as e:
+                    st.error(f"Invalid user ID format: {e}")
+                    logger.error(f"Invalid user ID format: {user_id}, error: {e}")
+                    return
             
-            # Create task data
-            task_data = {
-                "name": f"Retainer Projects - {subtask_title}",
-                "project_id": project_id,
-                "customer": retainer_customer,
-                "x_studio_target_language": retainer_target_language,
-                "x_studio_guidelines": retainer_guidelines,
-                "user_ids": [(6, 0, [user_id])],
-                "x_studio_request_receipt_date_time": retainer_request_receipt_dt.strftime("%Y-%m-%d %H:%M:%S"),
-                "x_studio_internal_due_date_1": retainer_internal_dt.strftime("%Y-%m-%d %H:%M:%S"),
-                # Subtask details
-                "x_studio_sub_task_1": subtask_title,
-                "x_studio_service_category_1": retainer_service_category_1,
-                "x_studio_total_no_of_design_units_sc1": no_of_design_units_sc1,
-                "x_studio_service_category_2": retainer_service_category_2,
-                "x_studio_total_no_of_design_units_sc2": no_of_design_units_sc2,
-                "x_studio_client_due_date_3": retainer_client_due_date_subtask.strftime("%Y-%m-%d"),
-                "description": f"Company: {selected_company}\nCustomer: {retainer_customer}\nProject: {parent_project_name}"
-            }
+            # Find partner_id for customer if available
+            partner_id = None
+            try:
+                partners = models.execute_kw(
+                    ODOO_DB, uid, ODOO_PASSWORD,
+                    'res.partner', 'search_read',
+                    [[['name', '=', retainer_customer]]],
+                    {'fields': ['id']}
+                )
+                if partners:
+                    partner_id = partners[0]['id']
+                    logger.info(f"Found partner_id {partner_id} for customer {retainer_customer}")
+            except Exception as e:
+                logger.warning(f"Could not find partner_id for customer {retainer_customer}: {e}")
             
-            # Add designer information if available
-            if "selected_designer" in st.session_state:
-                task_data["description"] += f"\n\nSuggested Designer: {st.session_state.selected_designer}"
-            
-            # Create task in Odoo
-            with st.spinner("Creating task in Odoo..."):
-                task_id = create_odoo_task(task_data)
-                
-                if task_id:
-                    st.success(f"Task created in Odoo with ID: {task_id}")
+            try:
+                # STEP 1: CREATE PARENT TASK
+                with st.spinner("Creating parent task in Odoo..."):
+                    # Create parent task with only fields that exist
+                    parent_task_data = {
+                        "name": f"Retainer Parent: {parent_project_name} - {retainer_customer}",
+                        "project_id": project_id,
+                        "user_ids": [(6, 0, [user_id])],  # This is the correct format for many2many fields
+                        "description": f"Company: {selected_company}\nCustomer: {retainer_customer}\nProject: {parent_project_name}"
+                    }
                     
-                        # Create Google Drive folder for this task
-                    with st.spinner("Creating Google Drive folder for task..."):
-                        # Sanitize folder name
-                        folder_name = f"{subtask_title} - {task_id}"
-                        folder_name = folder_name.replace('/', '-').replace('\\', '-')
-                        
-                        folder_id = create_folder(folder_name)
-                        
-                        if folder_id:
-                            folder_link = get_folder_link(folder_id)
-                            folder_url = get_folder_url(folder_id)
-                            
-                            st.success(f"Created Google Drive folder for this task")
-                            
-                            # Store folder info in session state
-                            st.session_state.drive_folder_id = folder_id
-                            st.session_state.drive_folder_link = folder_link
-                            
-                            # Update the task with the folder link
-                            try:
-                                task_data_read = models.execute_kw(
-                                    ODOO_DB, uid, ODOO_PASSWORD,
-                                    'project.task', 'read',
-                                    [[task_id]],
-                                    {'fields': ['description']}
-                                )[0]
-                                
-                                current_description = task_data_read.get('description', '')
-                                updated_description = f"{current_description}\n\n📁 Google Drive folder: {folder_url}"
-                                
-                                models.execute_kw(
-                                    ODOO_DB, uid, ODOO_PASSWORD,
-                                    'project.task', 'write',
-                                    [[task_id], {'description': updated_description}]
-                                )
-                                logger.info(f"Updated task {task_id} with Drive folder link")
-                            except Exception as e:
-                                logger.warning(f"Could not update task with folder link: {e}")
+                    # Add partner_id if found
+                    if partner_id:
+                        parent_task_data["partner_id"] = partner_id
+                    
+                    # Add optional fields if they exist and have values
+                    if retainer_target_language:
+                        parent_task_data["x_studio_target_language"] = retainer_target_language
+                    
+                    # Handle guidelines properly - extract ID from tuple if applicable
+                    if retainer_guidelines:
+                        if isinstance(retainer_guidelines, tuple) and len(retainer_guidelines) > 1:
+                            # Extract the ID (first element of the tuple)
+                            parent_task_data["x_studio_guidelines"] = retainer_guidelines[0]
+                        elif isinstance(retainer_guidelines, int):
+                            parent_task_data["x_studio_guidelines"] = retainer_guidelines
                         else:
-                            st.warning("Could not create Google Drive folder. Please check logs for details.")
-
+                            logger.warning(f"Guidelines not in expected format: {retainer_guidelines}")
+                    
+                    # Format dates correctly to avoid the microseconds issue
+                    if retainer_request_receipt_dt:
+                        parent_task_data["x_studio_request_receipt_date_time"] = retainer_request_receipt_dt.strftime("%Y-%m-%d %H:%M:%S")
+                        
+                    if retainer_internal_dt:
+                        parent_task_data["x_studio_internal_due_date_1"] = retainer_internal_dt.strftime("%Y-%m-%d %H:%M:%S")
+                    
+                    # Create parent task in Odoo
+                    parent_task_id = create_odoo_task(parent_task_data)
+                    if not parent_task_id:
+                        st.error("Failed to create parent task in Odoo.")
+                        return
+                        
+                    st.success(f"Created Parent Task in Odoo (ID: {parent_task_id})")
+                
+                # STEP 2: CREATE SUBTASK
+                with st.spinner("Creating subtask in Odoo..."):
+                    # Create subtask with parent_id reference
+                    subtask_data = {
+                        "name": f"Retainer Subtask: {subtask_title}",
+                        "project_id": project_id,
+                        "parent_id": parent_task_id,  # This establishes the parent-child relationship
+                        "user_ids": [(6, 0, [user_id])],
+                        "description": f"Company: {selected_company}\nCustomer: {retainer_customer}\nProject: {parent_project_name}\nSubtask: {subtask_title}"
+                    }
+                    
+                    # Add partner_id if found
+                    if partner_id:
+                        subtask_data["partner_id"] = partner_id
+                    
+                    # Add optional fields if they exist
+                    if retainer_target_language:
+                        subtask_data["x_studio_target_language"] = retainer_target_language
+                    
+                    # Handle guidelines properly - extract ID from tuple if applicable
+                    if retainer_guidelines:
+                        if isinstance(retainer_guidelines, tuple) and len(retainer_guidelines) > 1:
+                            subtask_data["x_studio_guidelines"] = retainer_guidelines[0]
+                        elif isinstance(retainer_guidelines, int):
+                            subtask_data["x_studio_guidelines"] = retainer_guidelines
+                    
+                    # Format dates correctly
+                    if retainer_request_receipt_dt:
+                        subtask_data["x_studio_request_receipt_date_time"] = retainer_request_receipt_dt.strftime("%Y-%m-%d %H:%M:%S")
+                        
+                    if retainer_client_due_date_subtask:
+                        subtask_data["x_studio_client_due_date_3"] = retainer_client_due_date_subtask.strftime("%Y-%m-%d")
+                        
+                    if retainer_internal_dt:
+                        subtask_data["x_studio_internal_due_date_1"] = retainer_internal_dt.strftime("%Y-%m-%d %H:%M:%S")
+                    
+                    # Handle service category 1
+                    if retainer_service_category_1:
+                        if isinstance(retainer_service_category_1, tuple) and len(retainer_service_category_1) > 1:
+                            if retainer_service_category_1[0] != -1:
+                                subtask_data["x_studio_service_category_1"] = retainer_service_category_1[0]
+                            else:
+                                logger.warning(f"Skipping invalid service_category_1 ID: {retainer_service_category_1}")
+                        elif isinstance(retainer_service_category_1, int):
+                            subtask_data["x_studio_service_category_1"] = retainer_service_category_1
+                        else:
+                            logger.warning(f"Skipping service_category_1 as it's not in expected format: {retainer_service_category_1}")
+                    
+                    # Handle service category 2
+                    if retainer_service_category_2:
+                        if isinstance(retainer_service_category_2, tuple) and len(retainer_service_category_2) > 1:
+                            if retainer_service_category_2[0] != -1:
+                                subtask_data["x_studio_service_category_2"] = retainer_service_category_2[0]
+                            else:
+                                logger.warning(f"Skipping invalid service_category_2 ID: {retainer_service_category_2}")
+                        elif isinstance(retainer_service_category_2, int):
+                            subtask_data["x_studio_service_category_2"] = retainer_service_category_2
+                        else:
+                            logger.warning(f"Skipping service_category_2 as it's not in expected format: {retainer_service_category_2}")
+                    
+                    # Add design units
+                    if no_of_design_units_sc1:
+                        subtask_data["x_studio_total_no_of_design_units_sc1"] = no_of_design_units_sc1
+                    
+                    if no_of_design_units_sc2:
+                        subtask_data["x_studio_total_no_of_design_units_sc2"] = no_of_design_units_sc2
+                    
+                    # Create subtask in Odoo
+                    subtask_id = create_odoo_task(subtask_data)
+                    if not subtask_id:
+                        st.error("Failed to create subtask in Odoo.")
+                        return
+                        
+                    st.success(f"Created Subtask in Odoo (ID: {subtask_id})")
+                
+                # STEP 3: CREATE GOOGLE DRIVE FOLDER
+                with st.spinner("Creating Google Drive folder for task..."):
+                    # Sanitize folder name
+                    folder_name = f"{parent_project_name} - {subtask_title} - {subtask_id}"
+                    folder_name = folder_name.replace('/', '-').replace('\\', '-')
+                    
+                    folder_id = create_folder(folder_name)
+                    
+                    if folder_id:
+                        folder_link = get_folder_link(folder_id)
+                        folder_url = get_folder_url(folder_id)
+                        
+                        st.success(f"Created Google Drive folder for this task")
+                        
+                        # Store folder info in session state
+                        st.session_state.drive_folder_id = folder_id
+                        st.session_state.drive_folder_link = folder_link
+                        
+                        # Update both parent and subtask with the folder link
+                        try:
+                            # Update the parent task description to include the folder link
+                            parent_task_desc = models.execute_kw(
+                                ODOO_DB, uid, ODOO_PASSWORD,
+                                'project.task', 'read',
+                                [[parent_task_id]],
+                                {'fields': ['description']}
+                            )[0]['description']
+                            
+                            updated_parent_desc = f"{parent_task_desc}\n\n📁 Google Drive folder: {folder_url}"
+                            
+                            models.execute_kw(
+                                ODOO_DB, uid, ODOO_PASSWORD,
+                                'project.task', 'write',
+                                [[parent_task_id], {'description': updated_parent_desc}]
+                            )
+                            
+                            # Update the subtask description to include the folder link
+                            subtask_desc = models.execute_kw(
+                                ODOO_DB, uid, ODOO_PASSWORD,
+                                'project.task', 'read',
+                                [[subtask_id]],
+                                {'fields': ['description']}
+                            )[0]['description']
+                            
+                            updated_subtask_desc = f"{subtask_desc}\n\n📁 Google Drive folder: {folder_url}"
+                            
+                            models.execute_kw(
+                                ODOO_DB, uid, ODOO_PASSWORD,
+                                'project.task', 'write',
+                                [[subtask_id], {'description': updated_subtask_desc}]
+                            )
+                            
+                            logger.info(f"Updated tasks with Drive folder link")
+                        except Exception as e:
+                            logger.warning(f"Could not update tasks with folder link: {e}")
+                    else:
+                        st.warning("Could not create Google Drive folder. Please check logs for details.")
+                
+                # STEP 4: PREPARE FOR DESIGNER SELECTION
+                with st.spinner("Preparing for designer selection..."):
                     # Fetch the task details from Odoo for designer selection
                     task_details = models.execute_kw(
                         ODOO_DB, uid, ODOO_PASSWORD,
                         'project.task', 'read',
-                        [[task_id]],
+                        [[subtask_id]],
                         {'fields': ['id', 'name', 'description', 'x_studio_service_category_1', 
                                 'x_studio_service_category_2', 'x_studio_target_language',
                                 'x_studio_client_due_date_3', 'date_deadline']}
@@ -1331,14 +1489,21 @@ def retainer_subtask_page():
                     st.session_state.created_tasks = [task_details]
                     st.session_state.customer = retainer_customer
                     st.session_state.project = parent_project_name
+                    st.session_state.parent_task_id = parent_task_id
                     st.session_state.designer_selection = True
                     
-                    # Provide user feedback
-                    st.success("Task created! Proceeding to designer selection...")
-                    st.rerun()    
-                else:
-                    st.error("Task creation failed.")
-
+                    # Display designer suggestion if available
+                    if "selected_designer" in st.session_state:
+                        st.info(f"Suggested Designer: {st.session_state.selected_designer}")
+                    
+                    # Success message and transition
+                    st.success("Tasks created successfully! Proceeding to designer selection...")
+                    
+                    st.rerun()
+            
+            except Exception as e:
+                st.error(f"An error occurred: {str(e)}")
+                logger.error(f"Error in retainer task creation: {e}", exc_info=True)
 def inspect_field_values(models, uid, field_name, model_name='project.task', limit=50):
     """
     Inspects the values of a specific field across records to help diagnose type issues.
@@ -2291,10 +2456,52 @@ def designer_selection_page():
                 st.session_state.pop(key, None)
             st.rerun()
 
+
+
 # -------------------------------
 # MAIN
 # -------------------------------
+
+def validate_session():
+
+    """
+    Validates the current session and handles expiry
+    
+    Returns:
+        True if session is valid, False if expired or not logged in
+    """
+    from session_manager import SessionManager
+    SessionManager.update_activity()  # Add this line
+
+    if not st.session_state.get("logged_in", False):
+        return False
+        
+    # Check for session expiry
+    if "session_expiry" in st.session_state:
+        if datetime.now() > st.session_state.session_expiry:
+            # Session expired, log out
+            st.warning("Your session has expired. Please log in again.")
+            st.session_state.clear()
+            return False
+    
+    # Validate Odoo connection
+    if not check_odoo_connection():
+        with st.spinner("Reconnecting to Odoo..."):
+            uid, models = get_odoo_connection(force_refresh=True)
+            if not uid or not models:
+                st.error("Lost connection to Odoo. Please log in again.")
+                st.session_state.clear()
+                return False
+    
+    return True
+
 def main():
+    from session_manager import SessionManager
+    
+    # Initialize session
+    SessionManager.initialize_session()
+    
+    # Handle debug mode
     if inject_debug_page():
         return
     
@@ -2310,7 +2517,13 @@ def main():
                 st.session_state.pop("debug_mode")
                 st.rerun()
             return
-            
+    
+    # Validate session for all pages except login
+    if "logged_in" in st.session_state and st.session_state.logged_in:
+        if not validate_session():
+            login_page()
+            return
+    
     # Main content
     if "logged_in" not in st.session_state or not st.session_state.logged_in:
         login_page()
@@ -2338,6 +2551,8 @@ def main():
                 email_analysis_page()
             elif "retainer_parent_input_done" not in st.session_state:
                 retainer_parent_task_page()
+            elif "designer_selection" in st.session_state and st.session_state.designer_selection:
+                designer_selection_page()  # Make sure this is checked BEFORE calling retainer_subtask_page
             else:
                 retainer_subtask_page()
 

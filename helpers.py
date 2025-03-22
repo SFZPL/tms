@@ -30,49 +30,88 @@ OdooConnection = Tuple[int, xmlrpc.client.ServerProxy]
 OdooRecord = Dict[str, Any]
 
 @st.cache_resource(show_spinner=False)
-def get_odoo_connection() -> OdooConnection:
+def get_odoo_connection(force_refresh=False):
     """
-    Creates and returns a connection to the Odoo API with enhanced logging.
+    Creates and returns a connection to the Odoo API with improved handling
+    
+    Args:
+        force_refresh: Force a new connection even if cached
+    
+    Returns:
+        Tuple of (uid, models) or (None, None) if failed
     """
-    try:
-        # Log all connection details (be careful with sensitive info)
-        st.write(f"Attempting Odoo Connection:")
-        st.write(f"URL: {ODOO_URL}")
-        st.write(f"DB: {ODOO_DB}")
-        st.write(f"Username: {ODOO_USERNAME}")
-        
-        common = xmlrpc.client.ServerProxy(f"{ODOO_URL}/xmlrpc/2/common")
-        
-        # Add more detailed logging
-        st.write("Attempting authentication...")
-        
-        uid = common.authenticate(ODOO_DB, ODOO_USERNAME, ODOO_PASSWORD, {})
-        
-        if not uid:
-            st.error("Odoo Authentication Failed!")
-            logger.error("Odoo authentication failed - check credentials")
-            return None, None
+    # Check if we need to create a new connection
+    if force_refresh or "odoo_connection" not in st.session_state:
+        try:
+            logger.info("Establishing new Odoo connection")
             
-        models = xmlrpc.client.ServerProxy(f"{ODOO_URL}/xmlrpc/2/object")
+            # Connect to Odoo
+            common = xmlrpc.client.ServerProxy(f"{ODOO_URL}/xmlrpc/2/common")
+            
+            # Add timeout for better error handling
+            uid = common.authenticate(ODOO_DB, ODOO_USERNAME, ODOO_PASSWORD, {})
+            
+            if not uid:
+                logger.error("Odoo authentication failed - invalid credentials or server issue")
+                return None, None
+                
+            # Create models proxy
+            models = xmlrpc.client.ServerProxy(f"{ODOO_URL}/xmlrpc/2/object")
+            
+            # Store connection with timestamp
+            st.session_state.odoo_connection = {
+                "uid": uid,
+                "models": models,
+                "timestamp": datetime.now()
+            }
+            logger.info(f"Successfully connected to Odoo (UID: {uid})")
+            
+            return uid, models
+            
+        except xmlrpc.client.Fault as e:
+            logger.error(f"Odoo XML-RPC Fault: {e}", exc_info=True)
+            return None, None
+        except xmlrpc.client.ProtocolError as e:
+            logger.error(f"Odoo Protocol Error: {e}", exc_info=True)
+            return None, None
+        except Exception as e:
+            logger.error(f"Odoo Connection Error: {e}", exc_info=True)
+            return None, None
+    else:
+        # Check if connection is expired (over 1 hour old)
+        connection = st.session_state.odoo_connection
+        time_diff = datetime.now() - connection["timestamp"]
         
-        st.success(f"Successfully connected to Odoo (UID: {uid})")
-        logger.info(f"Successfully connected to Odoo (UID: {uid})")
+        if time_diff.total_seconds() > 3600:  # 1 hour
+            logger.info("Odoo connection expired, refreshing")
+            # Clear and recursively call to refresh
+            st.session_state.pop("odoo_connection", None)
+            return get_odoo_connection()
         
-        return uid, models
+        return connection["uid"], connection["models"]
+
+def check_odoo_connection():
+    """
+    Validates that the Odoo connection is active
+    
+    Returns:
+        True if connection is valid, False otherwise
+    """
+    uid, models = get_odoo_connection()
+    if not uid or not models:
+        return False
         
-    except Exception as e:
-        st.error(f"Comprehensive Odoo Connection Error: {e}")
-        logger.error(f"Comprehensive Odoo Connection Error: {e}", exc_info=True)
-        
-        # Provide more context about the error
-        import ssl
-        if isinstance(e, ssl.SSLCertVerificationError):
-            st.warning("SSL Certificate Verification Failed. This might be due to:")
-            st.warning("1. Self-signed certificate")
-            st.warning("2. Hostname mismatch")
-            st.warning("3. Expired certificate")
-        
-        return None, None
+    try:
+        # Simple test query to validate connection
+        result = models.execute_kw(
+            ODOO_DB, uid, ODOO_PASSWORD,
+            'res.users', 'search_count',
+            [[['id', '=', uid]]]
+        )
+        return result == 1
+    except Exception:
+        # If any error occurs, connection is invalid
+        return False
 
 def authenticate_odoo() -> OdooConnection:
     """Alias for get_odoo_connection for backward compatibility"""
