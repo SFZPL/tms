@@ -1,32 +1,45 @@
+# Core Streamlit and data handling
 streamlit==1.32.0
 pandas==2.0.3
 python-dotenv==1.0.0
 openpyxl==3.1.2
 XlsxWriter==3.1.2
-openai==0.28.0
 
-# Google API - Fixing dependency conflict
+# OpenAI API - Consider upgrading to newer version
+openai==0.28.0
+# For newer OpenAI SDK: openai>=1.3.0
+
+# Google API with fixed dependency versions
 google-auth==2.23.0
 google-auth-oauthlib==1.1.0
 google-api-python-client==2.108.0
 google-auth-httplib2==0.1.1
-# Important - google-auth 2.23.0 requires urllib3<2.0
+# Important constraint for compatibility 
 urllib3<2.0
 
 # Date handling
 pytz==2023.3
+python-dateutil>=2.8.2
 
-# HTTP requests
+# HTTP and authentication
 requests==2.31.0
-
-# For OAuth flows
 cachetools==5.3.1
 certifi==2023.7.22
 charset-normalizer==3.3.0
 idna==3.4
 oauthlib==3.2.2
-pyparsing==3.1.1
 requests-oauthlib==1.3.1
 rsa==4.9
+
+# Utilities
 six==1.16.0
 uritemplate==4.1.1
+pyparsing==3.1.1
+
+# Optional enhancements for visualization
+# plotly>=5.18.0
+# matplotlib>=3.7.3
+
+# Optional UI improvements
+# streamlit-extras>=0.3.2
+# streamlit-pandas>=0.1.1
