@@ -55,6 +55,9 @@ def get_google_service(service_name):
     """
     logger.info(f"Obtaining Google {service_name} service")
     
+    if "auth_attempts" not in st.session_state:
+        st.session_state.auth_attempts = 0
+
     # Check for existing credentials
     cred_key = f"google_{service_name}_creds"
     if cred_key in st.session_state:
@@ -102,21 +105,33 @@ def get_google_service(service_name):
                 # Check for authorization code - using ONLY st.query_params (new API)
                 if "code" in st.query_params:
                     try:
+                        # Prevent infinite loops
+                        st.session_state.auth_attempts += 1
+                        if st.session_state.auth_attempts > 3:
+                            st.error("Too many authentication attempts. Please reload the page and try again.")
+                            st.session_state.pop("auth_attempts", None)
+                            st.query_params.clear()
+                            return None
+                            
                         code = st.query_params["code"]
                         logger.info("Authorization code received from redirect")
                         
-                        flow.fetch_token(code=code)
+                        # Add timeout to token exchange
+                        flow.fetch_token(code=code, timeout=30)  # Add 30 second timeout
                         creds = flow.credentials
                         st.session_state[cred_key] = creds
                         
-                        # Clean up URL
+                        # Clear session state counter and params
+                        st.session_state.pop("auth_attempts", None)
                         st.query_params.clear()
                         
                         st.success("✅ Authentication successful!")
-                        st.rerun()
+                        return build(service_name, api_version, credentials=creds)  # Return immediately instead of rerun
                     except Exception as e:
                         logger.error(f"Error exchanging code for token: {e}", exc_info=True)
                         st.error(f"Authentication error: {str(e)}")
+                        st.query_params.clear()  # Clear params on error
+                        st.session_state.pop("auth_attempts", None)
                         return None
                 else:
                     # Initiate authorization flow
