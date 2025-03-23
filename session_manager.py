@@ -95,6 +95,8 @@ class SessionManager:
         st.session_state.logged_in = True
         st.session_state.login_time = login_time
         st.session_state.session_expiry = session_expiry
+        # FORCE RESET GOOGLE AUTH
+        st.session_state.google_auth_complete = False
         st.session_state.user = {
             "username": username,
             "session_id": str(uuid.uuid4())
@@ -149,7 +151,8 @@ class SessionManager:
             'retainer_project', 'retainer_parent_task_title', 'retainer_customer',
             'retainer_target_language', 'retainer_guidelines',
             'retainer_client_success_exec', 'retainer_request_receipt_dt',
-            'retainer_internal_dt', 'drive_folder_id', 'drive_folder_link'
+            'retainer_internal_dt', 'drive_folder_id', 'drive_folder_link',
+            'google_auth_complete'
         ]
         for key in flow_keys:
             if key in st.session_state:

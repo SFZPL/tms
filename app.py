@@ -2135,7 +2135,14 @@ def email_analysis_page():
 def google_auth_page():
     st.title("Google Services Authentication")
     st.markdown("Please authenticate with Google to enable Gmail and Drive functionality.")
-    
+
+    # Add debug/reset button
+    if st.button("Reset Google Auth Status (Debug)"):
+        for key in ['google_auth_complete', 'google_gmail_creds', 'google_drive_creds']:
+            if key in st.session_state:
+                st.session_state.pop(key, None)
+        st.rerun()
+        
     gmail_authenticated = "google_gmail_creds" in st.session_state
     drive_authenticated = "google_drive_creds" in st.session_state
     
@@ -2553,6 +2560,12 @@ def main():
     # Initialize session
     SessionManager.initialize_session()
     
+    st.sidebar.write("Debug Info:")
+    st.sidebar.write(f"Logged in: {st.session_state.get('logged_in', False)}")
+    st.sidebar.write(f"Google Auth Complete: {st.session_state.get('google_auth_complete', False)}")
+    st.sidebar.write(f"Google Gmail Creds: {'google_gmail_creds' in st.session_state}")
+    st.sidebar.write(f"Google Drive Creds: {'google_drive_creds' in st.session_state}")
+
     # Handle debug mode
     if inject_debug_page():
         return
