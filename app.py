@@ -9,7 +9,18 @@ import logging
 from typing import Dict, List, Tuple, Optional, Any, Union
 from google_drive import create_folder, get_folder_link, get_folder_url
 from config import get_secret
-from debug_utils import inject_debug_page, debug_function, SystemDebugger
+# In app.py, add a try/except block around the debug_utils import
+try:
+    from debug_utils import inject_debug_page, debug_function, SystemDebugger
+except ImportError:
+    # Create fallback versions or disable debugging
+    def inject_debug_page():
+        return False
+    def debug_function(func):
+        return func
+    class SystemDebugger:
+        def __init__(self): pass
+        def streamlit_debug_page(self): pass
 import google_auth
 from datetime import datetime
 

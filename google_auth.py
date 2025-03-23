@@ -44,13 +44,17 @@ def get_redirect_uri():
 # Modify google_auth.py to eliminate all OOB flow references
 
 def get_google_service(service_name):
-    """Unified function to get any Google service with proper authentication"""
-    logger.info(f"Obtaining Google {service_name} service")
+    """
+    Unified function to get any Google service with proper authentication
     
-    # Debug information
-    with st.expander("Authentication Debugging", expanded=False):
-        st.write("Session state keys:", list(st.session_state.keys()))
-        st.write("Query parameters:", dict(st.query_params))
+    Args:
+        service_name: Name of the service ('gmail' or 'drive')
+        
+    Returns:
+        Service object or None if authentication fails
+    """
+    # Simple logging - avoid using the logger which might depend on debug_utils
+    print(f"Obtaining Google {service_name} service")
     
     # Check for existing credentials
     cred_key = f"google_{service_name}_creds"
@@ -59,13 +63,14 @@ def get_google_service(service_name):
         # Refresh token if expired
         if creds and hasattr(creds, 'expired') and creds.expired and hasattr(creds, 'refresh_token'):
             try:
-                logger.info("Refreshing expired credentials")
+                print("Refreshing expired credentials")
                 creds.refresh(Request())
                 st.session_state[cred_key] = creds
             except Exception as e:
-                logger.error(f"Failed to refresh credentials: {e}")
+                print(f"Failed to refresh credentials: {e}")
                 # Clear invalid credentials
-                del st.session_state[cred_key]
+                if cred_key in st.session_state:
+                    del st.session_state[cred_key]
                 creds = None
     else:
         creds = None
@@ -73,11 +78,14 @@ def get_google_service(service_name):
     # If no valid credentials, authenticate
     if not creds:
         try:
-            client_config = get_google_credentials()
-            if not client_config:
-                logger.error("Google API credentials not found")
+            # Load client config from Streamlit secrets
+            try:
+                client_config_str = st.secrets["gcp"]["client_config"]
+                client_config = json.loads(client_config_str)
+            except Exception as e:
+                print(f"Error loading client config: {e}")
                 st.error("Google API credentials are missing. Please check your configuration.")
-                st.stop()
+                return None
             
             # Create a temporary file for credentials
             with tempfile.NamedTemporaryFile(delete=False, suffix='.json', mode='w') as temp:
@@ -87,49 +95,45 @@ def get_google_service(service_name):
             try:
                 # HARDCODE the redirect URI to match exactly what's in Google Cloud Console
                 redirect_uri = "https://prezlab-tms.streamlit.app/_oauth/callback"
-                logger.info(f"Using redirect URI: {redirect_uri}")
+                st.info(f"Using redirect URI: {redirect_uri}")
                 
-                # Create flow with explicit redirect URI
+                # Create flow with redirect URI
                 flow = InstalledAppFlow.from_client_secrets_file(
                     temp_path, 
-                    SCOPES,
+                    ['https://www.googleapis.com/auth/gmail.readonly', 'https://www.googleapis.com/auth/drive.file'],
                     redirect_uri=redirect_uri
                 )
                 
-                # Check for authorization code
+                # Check for authorization code in query parameters
                 if "code" in st.query_params:
                     try:
                         code = st.query_params["code"]
-                        logger.info(f"Processing auth code: {code[:10]}...")
+                        print(f"Authorization code received")
                         
                         # Exchange code for token
                         flow.fetch_token(code=code)
                         creds = flow.credentials
                         st.session_state[cred_key] = creds
                         
-                        # Clean up URL - use try/except for compatibility
+                        # Clean up URL
                         try:
-                            st.set_query_params()
+                            st.query_params.clear()
                         except:
-                            try:
-                                st.query_params.clear()
-                            except:
-                                pass
+                            pass
                         
-                        logger.info("Authentication successful!")
+                        print("Authentication successful!")
                         st.success("✅ Authentication successful!")
-                        time.sleep(1)  # Give UI time to update
                         
-                        # Create service immediately
+                        # Create service immediately to avoid rerun
                         api_version = 'v3' if service_name == 'drive' else 'v1'
                         service = build(service_name, api_version, credentials=creds)
                         return service
                     except Exception as e:
-                        logger.error(f"Error exchanging code for token: {e}", exc_info=True)
+                        print(f"Error exchanging code for token: {e}")
                         st.error(f"Authentication error: {str(e)}")
                         if cred_key in st.session_state:
                             del st.session_state[cred_key]
-                        st.stop()
+                        return None
                 else:
                     # Initiate authorization flow
                     auth_url, _ = flow.authorization_url(
@@ -139,30 +143,30 @@ def get_google_service(service_name):
                     )
                     st.info("### Google Authentication Required")
                     st.markdown(f"[Click here to authenticate with Google]({auth_url})")
-                    st.stop()  # Important: stop execution here
+                    return None
             finally:
                 # Clean up temporary file
                 try:
                     os.unlink(temp_path)
                 except Exception as e:
-                    logger.warning(f"Failed to delete temporary file: {e}")
+                    print(f"Failed to delete temporary file: {e}")
         except Exception as e:
-            logger.error(f"Google Authentication Error: {e}", exc_info=True)
+            print(f"Google Authentication Error: {e}")
             st.error(f"Failed to authenticate with Google: {str(e)}")
-            st.stop()
+            return None
     
-    # Create and return the service
+    # Create and return the service if we have credentials
     if creds:
         try:
             # Use appropriate API version
             api_version = 'v3' if service_name == 'drive' else 'v1'
             service = build(service_name, api_version, credentials=creds)
-            logger.info(f"Successfully created {service_name} service")
+            print(f"Successfully created {service_name} service")
             return service
         except Exception as e:
-            logger.error(f"Error creating {service_name} service: {e}")
+            print(f"Error creating {service_name} service: {e}")
             st.error(f"Error creating {service_name} service: {str(e)}")
             if cred_key in st.session_state:
                 del st.session_state[cred_key]
-            st.stop()
+            return None
     return None
