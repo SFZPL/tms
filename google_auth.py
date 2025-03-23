@@ -32,14 +32,16 @@ def get_redirect_uri():
     """Get the correct redirect URI based on environment"""
     if is_running_locally():
         logger.info("Using local redirect URI")
-        return "http://localhost:8501/_oauth/callback"  # Ensure this exactly matches what's in Google Cloud Console
+        return "http://localhost:8501/_oauth/callback"
     else:
-        deployed_url = st.secrets.get("deployed_url", "https://prezlab-tms.streamlit.app")
-        # Make sure trailing slashes are handled correctly and consistently
-        deployed_url = deployed_url.rstrip('/')
-        redirect_uri = f"{deployed_url}/_oauth/callback"
+        # More robust approach - try to detect the actual URL from Streamlit
+        # For Streamlit Cloud, follow their protocol (https)
+        base_url = "prezlab-tms.streamlit.app"
+        redirect_uri = f"https://{base_url}/_oauth/callback"
         logger.info(f"Using deployed redirect URI: {redirect_uri}")
         return redirect_uri
+
+# Modify google_auth.py to eliminate all OOB flow references
 
 def get_google_service(service_name):
     """
@@ -68,8 +70,6 @@ def get_google_service(service_name):
                 # Clear invalid credentials
                 st.session_state.pop(cred_key, None)
                 creds = None
-        elif creds and not hasattr(creds, 'refresh_token'):
-            logger.warning("Credentials missing refresh token")
     else:
         creds = None
     
@@ -88,80 +88,42 @@ def get_google_service(service_name):
                 temp_path = temp.name
             
             try:
-                # Authentication flow based on environment
-                if is_running_locally():
-                    logger.info("Using manual code entry flow for local authentication")
+                # Get the appropriate redirect URI
+                redirect_uri = get_redirect_uri()
+                logger.info(f"Using redirect URI: {redirect_uri}")
+                
+                # Create flow with redirect URI
+                flow = InstalledAppFlow.from_client_secrets_file(
+                    temp_path, 
+                    SCOPES,
+                    redirect_uri=redirect_uri
+                )
+                
+                # Check for authorization code in query parameters
+                query_params = st.experimental_get_query_params()
+                if "code" in query_params:
+                    code = st.query_params["code"]  # Get the first code value
+                    logger.info("Authorization code received from redirect")
                     
-                    # Create flow with special out-of-band URI for manual flow
-                    flow = InstalledAppFlow.from_client_secrets_file(
-                        temp_path, 
-                        SCOPES,
-                        redirect_uri="urn:ietf:wg:oauth:2.0:oob"  # Critical for manual flow
-                    )
+                    flow.fetch_token(code=code)
+                    creds = flow.credentials
+                    st.session_state[cred_key] = creds
                     
-                    # Generate auth URL for manual authentication
-                    auth_url, _ = flow.authorization_url(
-                        access_type='offline',
-                        include_granted_scopes='true',
-                        prompt='consent'
-                    )
+                    # Clean up URL
+                    st.query_params.clear()
                     
-                    st.info("### Google Authentication Required")
-                    st.write("Please complete these steps to authenticate with Google:")
-                    st.markdown(f"1. [Click here to authenticate with Google]({auth_url})")
-                    st.write("2. Sign in with your Google account and grant the requested permissions")
-                    st.write("3. After approval, you'll receive a code. Copy it and paste it below:")
-                    
-                    auth_code = st.text_input("Enter the authorization code:", key=f"auth_code_{service_name}")
-                    
-                    if auth_code:
-                        try:
-                            flow.fetch_token(code=auth_code)
-                            creds = flow.credentials
-                            st.session_state[cred_key] = creds
-                            st.success("✅ Authentication successful!")
-                        except Exception as e:
-                            st.error(f"Error processing authentication code: {e}")
-                            logger.error(f"Token fetch error: {e}")
-                            return None
-                    else:
-                        return None
+                    st.success("✅ Authentication successful!")
+                    st.rerun()
                 else:
-                    # Deployed environment
-                    logger.info("Using redirect flow for deployed environment")
-                    redirect_uri = "https://prezlab-tms.streamlit.app/_oauth/callback"
-                    
-                    flow = InstalledAppFlow.from_client_secrets_file(
-                        temp_path, 
-                        SCOPES,
-                        redirect_uri=redirect_uri
+                    # Initiate authorization flow
+                    auth_url, _ = flow.authorization_url(
+                        prompt='consent', 
+                        access_type='offline',
+                        include_granted_scopes='true'
                     )
-                    
-                    # Check for authorization code in query parameters
-                    query_params = st.query_params
-                    if "code" in query_params:
-                        code = query_params["code"]
-                        logger.info("Authorization code received from redirect")
-                        
-                        flow.fetch_token(code=code)
-                        creds = flow.credentials
-                        st.session_state[cred_key] = creds
-                        
-                        # Clean up URL
-                        st.query_params.clear()
-                        
-                        st.success("✅ Authentication successful!")
-                        st.rerun()
-                    else:
-                        # Initiate authorization flow
-                        auth_url, _ = flow.authorization_url(
-                            prompt='consent', 
-                            access_type='offline',
-                            include_granted_scopes='true'
-                        )
-                        st.info("### Google Authentication Required")
-                        st.markdown(f"[Click here to authenticate with Google]({auth_url})")
-                        return None
+                    st.info("### Google Authentication Required")
+                    st.markdown(f"[Click here to authenticate with Google]({auth_url})")
+                    return None
             finally:
                 # Clean up temporary file
                 try:
@@ -176,10 +138,6 @@ def get_google_service(service_name):
     
     # Create and return the service
     if creds:
-        st.session_state[cred_key] = {
-            "credentials": creds,
-            "timestamp": datetime.now()
-        }
         try:
             # Use appropriate API version
             api_version = 'v3' if service_name == 'drive' else 'v1'
