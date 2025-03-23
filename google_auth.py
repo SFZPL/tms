@@ -53,7 +53,6 @@ def get_google_service(service_name):
     Returns:
         Service object or None if authentication fails
     """
-    # Simple logging - avoid using the logger which might depend on debug_utils
     print(f"Obtaining Google {service_name} service")
     
     # Check for existing credentials
@@ -93,8 +92,8 @@ def get_google_service(service_name):
                 temp_path = temp.name
             
             try:
-                # HARDCODE the redirect URI to match exactly what's in Google Cloud Console
-                redirect_uri = "https://prezlab-tms.streamlit.app/_oauth/callback"
+                # CRITICAL: Use the base app URL without _oauth/callback
+                redirect_uri = "https://prezlab-tms.streamlit.app/"
                 st.info(f"Using redirect URI: {redirect_uri}")
                 
                 # Create flow with redirect URI
@@ -117,23 +116,20 @@ def get_google_service(service_name):
                         
                         # Clean up URL
                         try:
-                            st.query_params.clear()
+                            st.set_query_params()
                         except:
                             pass
                         
                         print("Authentication successful!")
                         st.success("✅ Authentication successful!")
-                        
-                        # Create service immediately to avoid rerun
-                        api_version = 'v3' if service_name == 'drive' else 'v1'
-                        service = build(service_name, api_version, credentials=creds)
-                        return service
+                        time.sleep(1)  # Give UI time to update
+                        st.rerun()  # Rerun to clear URL parameters
                     except Exception as e:
                         print(f"Error exchanging code for token: {e}")
                         st.error(f"Authentication error: {str(e)}")
                         if cred_key in st.session_state:
                             del st.session_state[cred_key]
-                        return None
+                        st.stop()  # CRITICAL: Stop execution on error
                 else:
                     # Initiate authorization flow
                     auth_url, _ = flow.authorization_url(
@@ -143,7 +139,7 @@ def get_google_service(service_name):
                     )
                     st.info("### Google Authentication Required")
                     st.markdown(f"[Click here to authenticate with Google]({auth_url})")
-                    return None
+                    st.stop()  # CRITICAL: Stop execution here
             finally:
                 # Clean up temporary file
                 try:
@@ -153,9 +149,9 @@ def get_google_service(service_name):
         except Exception as e:
             print(f"Google Authentication Error: {e}")
             st.error(f"Failed to authenticate with Google: {str(e)}")
-            return None
+            st.stop()  # Stop execution on error
     
-    # Create and return the service if we have credentials
+    # Create and return the service
     if creds:
         try:
             # Use appropriate API version
