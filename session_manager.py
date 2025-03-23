@@ -39,17 +39,12 @@ class SessionManager:
                 if key not in st.session_state:
                     st.session_state[key] = None
             
+            # Add google_auth_complete flag
+            if "google_auth_complete" not in st.session_state:
+                st.session_state.google_auth_complete = False
+            
             # Set default values
             st.session_state.debug_mode = None
-        
-        # IMPORTANT: Check for OAuth code - if present, consider this a logged in session
-        if "code" in st.query_params and "logged_in" not in st.session_state:
-            logger.info("OAuth code detected, preserving session")
-            # Maintain session during OAuth callback
-            st.session_state.logged_in = True
-            st.session_state.user = {"username": "admin"}  # Default to admin during OAuth
-            st.session_state.login_time = datetime.now()
-            st.session_state.session_expiry = datetime.now() + timedelta(hours=8)
     
     @staticmethod
     def check_session_expiry(expiry_hours=8):
@@ -127,6 +122,9 @@ class SessionManager:
         for key in list(st.session_state.keys()):
             if key != "debug_mode":
                 st.session_state.pop(key, None)
+
+        # Ensure google_auth_complete is reset
+        st.session_state.google_auth_complete = False
         
         # Restore debug mode if it was set
         if debug_mode:

@@ -2132,6 +2132,47 @@ def email_analysis_page():
         if st.button("Continue to Parent Task Details", type="primary"):
             st.rerun()
 
+def google_auth_page():
+    st.title("Google Services Authentication")
+    st.markdown("Please authenticate with Google to enable Gmail and Drive functionality.")
+    
+    gmail_authenticated = "google_gmail_creds" in st.session_state
+    drive_authenticated = "google_drive_creds" in st.session_state
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.subheader("Gmail")
+        if gmail_authenticated:
+            st.success("✅ Authenticated")
+        else:
+            st.warning("⚠️ Not authenticated")
+            if st.button("Authenticate Gmail"):
+                with st.spinner("Connecting to Gmail..."):
+                    gmail_service = get_gmail_service()
+                    if gmail_service:
+                        st.success("Gmail authentication successful!")
+                        st.rerun()
+    
+    with col2:
+        st.subheader("Google Drive")
+        if drive_authenticated:
+            st.success("✅ Authenticated")
+        else:
+            st.warning("⚠️ Not authenticated")
+            if st.button("Authenticate Drive"):
+                with st.spinner("Connecting to Drive..."):
+                    drive_service = get_drive_service()
+                    if drive_service:
+                        st.success("Drive authentication successful!")
+                        st.rerun()
+    
+    if gmail_authenticated and drive_authenticated:
+        st.success("All services authenticated! You're ready to proceed.")
+        if st.button("Continue to Dashboard", type="primary"):
+            st.session_state.google_auth_complete = True
+            st.rerun()
+
 def initialize_gmail_connection():
     """
     Initialize connection to Gmail API and handle authentication.
@@ -2538,6 +2579,9 @@ def main():
     # Main content
     if "logged_in" not in st.session_state or not st.session_state.logged_in:
         login_page()
+    # Add Google auth step after login but before main workflow
+    elif "google_auth_complete" not in st.session_state:
+        google_auth_page()
     elif "form_type" not in st.session_state:
         type_selection_page()
     else:
