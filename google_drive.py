@@ -1,6 +1,7 @@
 import logging
 import streamlit as st
 from googleapiclient.errors import HttpError
+from googleapiclient.discovery import build
 from config import get_secret
 
 # Configure logging
@@ -17,6 +18,13 @@ PARENT_FOLDER_ID = get_secret("google.drive_parent_folder_id", "")
 def get_drive_service():
     """Get an authenticated Drive service"""
     from google_auth import get_google_service
+    
+    # Check if we already have Drive credentials
+    if "google_drive_creds" in st.session_state:
+        # Use existing Drive credentials
+        return build('drive', 'v3', credentials=st.session_state.google_drive_creds)
+    
+    # Get service through standard flow
     return get_google_service('drive')
 
 def create_folder(folder_name, parent_folder_id=None):
@@ -30,6 +38,12 @@ def create_folder(folder_name, parent_folder_id=None):
     Returns:
         Folder ID if successful, None otherwise
     """
+
+    cache_key = f"drive_folder_{folder_name}"
+    if cache_key in st.session_state:
+        print(f"Using cached folder ID for {folder_name}")
+        return st.session_state[cache_key]
+    
     if not folder_name:
         logger.error("Folder name is required")
         return None
@@ -61,11 +75,16 @@ def create_folder(folder_name, parent_folder_id=None):
         
         folder_id = folder.get('id')
         logger.info(f"Created folder: {folder_name} (ID: {folder_id})")
+        # Store successful folder creation
+        if folder_id:
+            st.session_state[cache_key] = folder_id
+        
         return folder_id
         
     except Exception as e:
         logger.error(f"Error creating folder: {e}", exc_info=True)
         return None
+    
 
 def get_folder_link(folder_id):
     """
