@@ -167,11 +167,7 @@ def get_google_service(service_name):
                     st.info("### Google Authentication Required")
                     st.markdown(f"[Click here to authenticate with Google]({auth_url})")
                     
-                    # Add a button to skip authentication
-                    if st.button("Skip Authentication (Use Demo Mode)"):
-                        st.session_state.auth_skipped = True
-                        st.rerun()
-                    
+                    # NO BUTTONS INSIDE THIS FUNCTION - they might render inside a form
                     return None
             finally:
                 # Clean up temporary file
