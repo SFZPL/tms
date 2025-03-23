@@ -55,9 +55,20 @@ def get_google_service(service_name):
     """
     logger.info(f"Obtaining Google {service_name} service")
     
-    if "auth_attempts" not in st.session_state:
-        st.session_state.auth_attempts = 0
-
+    # IMPORTANT: Safety mechanism to prevent infinite loops
+    if "code_processing" in st.session_state and st.session_state.code_processing:
+        # If we've been processing a code for too long, reset the state
+        if "code_timestamp" in st.session_state:
+            time_diff = (datetime.now() - st.session_state.code_timestamp).total_seconds()
+            if time_diff > 30:  # 30 seconds timeout
+                logger.warning("Code processing timeout - resetting state")
+                for key in ["code_processing", "code_timestamp"]:
+                    st.session_state.pop(key, None)
+                if "code" in st.query_params:
+                    st.query_params.clear()
+                st.error("Authentication process timed out. Please try again.")
+                return None
+    
     # Check for existing credentials
     cred_key = f"google_{service_name}_creds"
     if cred_key in st.session_state:
@@ -70,7 +81,6 @@ def get_google_service(service_name):
                 st.session_state[cred_key] = creds
             except Exception as e:
                 logger.error(f"Failed to refresh credentials: {e}")
-                # Clear invalid credentials
                 st.session_state.pop(cred_key, None)
                 creds = None
     else:
@@ -102,36 +112,50 @@ def get_google_service(service_name):
                     redirect_uri=redirect_uri
                 )
                 
-                # Check for authorization code - using ONLY st.query_params (new API)
+                # Check for authorization code
                 if "code" in st.query_params:
+                    # Set processing flag and timestamp
+                    if not st.session_state.get("code_processing", False):
+                        st.session_state.code_processing = True
+                        st.session_state.code_timestamp = datetime.now()
+                        logger.info("Starting code processing")
+                    
                     try:
-                        # Prevent infinite loops
-                        st.session_state.auth_attempts += 1
-                        if st.session_state.auth_attempts > 3:
-                            st.error("Too many authentication attempts. Please reload the page and try again.")
-                            st.session_state.pop("auth_attempts", None)
-                            st.query_params.clear()
-                            return None
-                            
                         code = st.query_params["code"]
-                        logger.info("Authorization code received from redirect")
+                        logger.info(f"Processing auth code: {code[:10]}...")
                         
-                        # Add timeout to token exchange
-                        flow.fetch_token(code=code, timeout=30)  # Add 30 second timeout
+                        # Try to exchange the code for a token
+                        flow.fetch_token(code=code)
                         creds = flow.credentials
                         st.session_state[cred_key] = creds
                         
-                        # Clear session state counter and params
-                        st.session_state.pop("auth_attempts", None)
+                        # Clean up state
+                        st.session_state.pop("code_processing", None)
+                        st.session_state.pop("code_timestamp", None)
+                        
+                        # Clean up URL without rerunning
                         st.query_params.clear()
                         
+                        logger.info("Authentication successful!")
                         st.success("✅ Authentication successful!")
-                        return build(service_name, api_version, credentials=creds)  # Return immediately instead of rerun
+                        
+                        # Create service immediately
+                        api_version = 'v3' if service_name == 'drive' else 'v1'
+                        try:
+                            service = build(service_name, api_version, credentials=creds)
+                            return service
+                        except Exception as e:
+                            logger.error(f"Error creating service after auth: {e}")
+                            st.error(f"Error creating service: {str(e)}")
+                            return None
                     except Exception as e:
+                        # Clean up state
+                        st.session_state.pop("code_processing", None)
+                        st.session_state.pop("code_timestamp", None)
+                        st.query_params.clear()
+                        
                         logger.error(f"Error exchanging code for token: {e}", exc_info=True)
                         st.error(f"Authentication error: {str(e)}")
-                        st.query_params.clear()  # Clear params on error
-                        st.session_state.pop("auth_attempts", None)
                         return None
                 else:
                     # Initiate authorization flow
@@ -142,6 +166,12 @@ def get_google_service(service_name):
                     )
                     st.info("### Google Authentication Required")
                     st.markdown(f"[Click here to authenticate with Google]({auth_url})")
+                    
+                    # Add a button to skip authentication
+                    if st.button("Skip Authentication (Use Demo Mode)"):
+                        st.session_state.auth_skipped = True
+                        st.rerun()
+                    
                     return None
             finally:
                 # Clean up temporary file
