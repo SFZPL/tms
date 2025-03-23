@@ -39,13 +39,12 @@ class SessionManager:
                 if key not in st.session_state:
                     st.session_state[key] = None
             
-            # Add google_auth_complete flag
-            if "google_auth_complete" not in st.session_state:
-                st.session_state.google_auth_complete = False
+            # IMPORTANT: Always explicitly set google_auth_complete
+            st.session_state.google_auth_complete = False
             
             # Set default values
             st.session_state.debug_mode = None
-    
+        
     @staticmethod
     def check_session_expiry(expiry_hours=8):
         """

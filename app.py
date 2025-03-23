@@ -2143,6 +2143,10 @@ def google_auth_page():
                 st.session_state.pop(key, None)
         st.rerun()
         
+    # IMPORTANT: Force reset the flag at the beginning to ensure flow control works correctly
+    if st.session_state.get('google_auth_complete', False) == True:
+        st.session_state.google_auth_complete = False
+    
     gmail_authenticated = "google_gmail_creds" in st.session_state
     drive_authenticated = "google_drive_creds" in st.session_state
     
@@ -2593,7 +2597,7 @@ def main():
     if "logged_in" not in st.session_state or not st.session_state.logged_in:
         login_page()
     # Add Google auth step after login but before main workflow
-    elif "google_auth_complete" not in st.session_state:
+    elif "google_auth_complete" not in st.session_state or st.session_state.google_auth_complete == False:
         google_auth_page()
     elif "form_type" not in st.session_state:
         type_selection_page()
