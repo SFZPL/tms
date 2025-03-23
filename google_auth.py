@@ -99,7 +99,7 @@ def get_google_service(service_name):
                 # Create flow with redirect URI
                 flow = InstalledAppFlow.from_client_secrets_file(
                     temp_path, 
-                    ['https://www.googleapis.com/auth/gmail.readonly', 'https://www.googleapis.com/auth/drive.file'],
+                    SCOPES,  # Use the comprehensive list defined at the top of the file
                     redirect_uri=redirect_uri
                 )
                 
