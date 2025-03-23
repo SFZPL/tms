@@ -2134,27 +2134,44 @@ def email_analysis_page():
 
 def google_auth_page():
     st.title("Google Services Authentication")
-    st.markdown("Please authenticate with Google to enable Gmail and Drive functionality.")
-
-    # Add debug/reset button
-    if st.button("Reset Google Auth Status (Debug)"):
-        for key in ['google_auth_complete', 'google_gmail_creds', 'google_drive_creds']:
-            if key in st.session_state:
-                st.session_state.pop(key, None)
-        st.rerun()
-        
-    # IMPORTANT: Force reset the flag at the beginning to ensure flow control works correctly
-    if st.session_state.get('google_auth_complete', False) == True:
-        st.session_state.google_auth_complete = False
     
+    # Check for both credential presence and backup flags
     gmail_authenticated = "google_gmail_creds" in st.session_state
     drive_authenticated = "google_drive_creds" in st.session_state
+    
+    # Check for backup auth completion flags
+    gmail_auth_complete = st.session_state.get("gmail_auth_complete", False)
+    drive_auth_complete = st.session_state.get("drive_auth_complete", False)
+    
+    # Add debug info to help troubleshoot
+    with st.sidebar.expander("Debug Info", expanded=False):
+        st.write("Session State Keys:", list(st.session_state.keys()))
+        st.write("Gmail Creds:", gmail_authenticated)
+        st.write("Drive Creds:", drive_authenticated)
+        st.write("Gmail Auth Complete Flag:", gmail_auth_complete)
+        st.write("Drive Auth Complete Flag:", drive_auth_complete)
+        
+        # Add a reset button
+        if st.button("Reset Google Auth Status (Debug)"):
+            keys_to_remove = [
+                'google_auth_complete', 
+                'google_gmail_creds', 
+                'google_drive_creds',
+                'gmail_auth_complete', 
+                'drive_auth_complete'
+            ]
+            for key in keys_to_remove:
+                if key in st.session_state:
+                    st.session_state.pop(key, None)
+            st.rerun()
+    
+    st.info("Please authenticate with Google to enable Gmail and Drive functionality.")
     
     col1, col2 = st.columns(2)
     
     with col1:
         st.subheader("Gmail")
-        if gmail_authenticated:
+        if gmail_authenticated or gmail_auth_complete:
             st.success("✅ Authenticated")
         else:
             st.warning("⚠️ Not authenticated")
@@ -2162,12 +2179,14 @@ def google_auth_page():
                 with st.spinner("Connecting to Gmail..."):
                     gmail_service = get_gmail_service()
                     if gmail_service:
+                        # Set both the credential and backup flags
+                        st.session_state.gmail_auth_complete = True
                         st.success("Gmail authentication successful!")
                         st.rerun()
     
     with col2:
         st.subheader("Google Drive")
-        if drive_authenticated:
+        if drive_authenticated or drive_auth_complete:
             st.success("✅ Authenticated")
         else:
             st.warning("⚠️ Not authenticated")
@@ -2175,14 +2194,25 @@ def google_auth_page():
                 with st.spinner("Connecting to Drive..."):
                     drive_service = get_drive_service()
                     if drive_service:
+                        # Set both the credential and backup flags
+                        st.session_state.drive_auth_complete = True
                         st.success("Drive authentication successful!")
                         st.rerun()
     
-    if gmail_authenticated and drive_authenticated:
+    # Check if both services are authenticated
+    if (gmail_authenticated or gmail_auth_complete) and (drive_authenticated or drive_auth_complete):
         st.success("All services authenticated! You're ready to proceed.")
+        
+        # Set the main flag that the main() function checks
+        st.session_state.google_auth_complete = True
+        
         if st.button("Continue to Dashboard", type="primary"):
+            # Ensure the flag is set before continuing
             st.session_state.google_auth_complete = True
             st.rerun()
+    else:
+        # Make sure google_auth_complete stays False until both services are authenticated
+        st.session_state.google_auth_complete = False
 
 def initialize_gmail_connection():
     """
