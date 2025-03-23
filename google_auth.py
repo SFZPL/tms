@@ -99,53 +99,35 @@ def get_google_service(service_name):
                     redirect_uri=redirect_uri
                 )
                 
-                # Check for authorization code in query parameters - compatible with both Streamlit versions
-                try:
-                    # Try the newer st.query_params first (Streamlit 1.28+)
-                    if hasattr(st, 'query_params') and "code" in st.query_params:
+                # Check for authorization code - using ONLY st.query_params (new API)
+                if "code" in st.query_params:
+                    try:
                         code = st.query_params["code"]
-                        logger.info("Authorization code received from redirect (using st.query_params)")
-                    # Fall back to experimental method
-                    else:
-                        query_params = st.experimental_get_query_params()
-                        if "code" in query_params:
-                            code = query_params["code"][0]  # Get the first code value
-                            logger.info("Authorization code received from redirect (using experimental_get_query_params)")
-                        else:
-                            code = None
-                    
-                    if code:
-                        try:
-                            flow.fetch_token(code=code)
-                            creds = flow.credentials
-                            st.session_state[cred_key] = creds
-                            
-                            # Clean up URL - handle different Streamlit versions
-                            if hasattr(st, 'query_params') and hasattr(st.query_params, 'clear'):
-                                st.query_params.clear()
-                            
-                            st.success("✅ Authentication successful!")
-                            st.rerun()
-                        except Exception as e:
-                            logger.error(f"Error exchanging code for token: {e}", exc_info=True)
-                            st.error(f"Authentication error: {str(e)}")
-                            return None
-                    else:
-                        # Initiate authorization flow
-                        auth_url, _ = flow.authorization_url(
-                            prompt='consent', 
-                            access_type='offline',
-                            include_granted_scopes='true'
-                        )
-                        st.info("### Google Authentication Required")
-                        st.markdown(f"[Click here to authenticate with Google]({auth_url})")
-                        return None
+                        logger.info("Authorization code received from redirect")
                         
-                except Exception as e:
-                    logger.error(f"Error handling auth code: {e}", exc_info=True)
-                    st.error(f"Error processing authentication: {str(e)}")
+                        flow.fetch_token(code=code)
+                        creds = flow.credentials
+                        st.session_state[cred_key] = creds
+                        
+                        # Clean up URL
+                        st.query_params.clear()
+                        
+                        st.success("✅ Authentication successful!")
+                        st.rerun()
+                    except Exception as e:
+                        logger.error(f"Error exchanging code for token: {e}", exc_info=True)
+                        st.error(f"Authentication error: {str(e)}")
+                        return None
+                else:
+                    # Initiate authorization flow
+                    auth_url, _ = flow.authorization_url(
+                        prompt='consent', 
+                        access_type='offline',
+                        include_granted_scopes='true'
+                    )
+                    st.info("### Google Authentication Required")
+                    st.markdown(f"[Click here to authenticate with Google]({auth_url})")
                     return None
-                    
             finally:
                 # Clean up temporary file
                 try:
