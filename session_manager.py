@@ -39,12 +39,12 @@ class SessionManager:
                 if key not in st.session_state:
                     st.session_state[key] = None
             
-            # IMPORTANT: Always explicitly set google_auth_complete
-            # st.session_state.google_auth_complete = False
+            # CRITICAL FIX: Always set user to empty dict if None
+            if st.session_state.user is None:
+                st.session_state.user = {}
             
             # Set default values
             st.session_state.debug_mode = None
-        
     @staticmethod
     def check_session_expiry(expiry_hours=8):
         """

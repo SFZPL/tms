@@ -131,6 +131,13 @@ def render_sidebar():
     
     with st.sidebar:
         st.title("Task Management")
+
+        # CRITICAL FIX: Add safety check for session state
+        if not hasattr(st, 'session_state') or st.session_state is None:
+            st.error("Session state unavailable")
+            if st.button("Reload Application"):
+                st.rerun()
+            return        
         
         if "logged_in" in st.session_state and st.session_state.logged_in:
             session_info = SessionManager.get_session_info()
@@ -174,7 +181,7 @@ def render_sidebar():
                 SessionManager.logout()
                 st.rerun()
 
-            if st.session_state.user['username'] == 'admin':  # Only show to admin users
+            if st.session_state.get('user') and st.session_state.user.get('username') == 'admin':
                 st.subheader("Admin Tools")
                 if st.button("Debug Task Fields"):
                     st.session_state.debug_mode = "task_fields"
@@ -2610,30 +2617,27 @@ def main():
     # Initialize session
     SessionManager.initialize_session()
 
-    # CRITICAL FIX: Check for OAuth callback before any other logic
+    # CRITICAL FIX: Add special OAuth callback detection
     if "code" in st.query_params:
-        # Store the code and important session info
+        # This indicates we're coming back from Google OAuth
         auth_code = st.query_params["code"]
-        was_logged_in = st.session_state.get("logged_in", False)
-        username = st.session_state.get("user", {}).get("username", "")
+        st.success("Authentication code received! Processing...")
         
-        # Process OAuth callback
-        from google_auth import process_oauth_callback
-        process_oauth_callback(auth_code)
+        # Process the code
+        from google_auth import handle_oauth_callback
+        success = handle_oauth_callback(auth_code)
         
-        # Restore login state if it was previously logged in
-        if was_logged_in and username:
-            # Restore minimal login state to prevent full re-login
-            st.session_state.logged_in = True
-            st.session_state.user = {"username": username}
-            # Redirect to clear the code from URL (avoids reusing the code)
+        if success:
+            # Authentication was successful
+            st.session_state.google_auth_complete = True
+            st.session_state.gmail_auth_complete = True
+            st.session_state.drive_auth_complete = True
+            
+            # Redirect to clear the URL parameters
+            st.query_params.clear()
             st.rerun()
+
     
-    st.sidebar.write("Debug Info:")
-    st.sidebar.write(f"Logged in: {st.session_state.get('logged_in', False)}")
-    st.sidebar.write(f"Google Auth Complete: {st.session_state.get('google_auth_complete', False)}")
-    st.sidebar.write(f"Google Gmail Creds: {'google_gmail_creds' in st.session_state}")
-    st.sidebar.write(f"Google Drive Creds: {'google_drive_creds' in st.session_state}")
 
     # Handle debug mode
     if inject_debug_page():
@@ -2641,6 +2645,12 @@ def main():
     
     # Render sidebar
     render_sidebar()
+
+    st.sidebar.write("Debug Info:")
+    st.sidebar.write(f"Logged in: {st.session_state.get('logged_in', False)}")
+    st.sidebar.write(f"Google Auth Complete: {st.session_state.get('google_auth_complete', False)}")
+    st.sidebar.write(f"Google Gmail Creds: {'google_gmail_creds' in st.session_state}")
+    st.sidebar.write(f"Google Drive Creds: {'google_drive_creds' in st.session_state}")
 
     # Add this section to show the Google Auth page on demand
     if st.session_state.get("show_google_auth", False):

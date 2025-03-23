@@ -54,135 +54,63 @@ def get_google_service(service_name):
     Returns:
         Service object or None if authentication fails
     """
-    print(f"Obtaining Google {service_name} service")
+    logger.info(f"Getting Google {service_name} service")
     
-    # Check for authorization code in query parameters FIRST
-    if "code" in st.query_params:
-        try:
-            code = st.query_params["code"]
-            print(f"Authorization code received: {code[:10]}..." if len(code) > 10 else code)
-            
-            # Save the code and clear query params to prevent reuse
-            code_value = code
-            st.query_params.clear()
-            
-            # Load client config from Streamlit secrets
-            try:
-                client_config_str = st.secrets["gcp"]["client_config"]
-                client_config = json.loads(client_config_str)
-            except Exception as e:
-                print(f"Error loading client config: {e}")
-                st.error("Google API credentials are missing. Please check your configuration.")
-                return None
-            
-            # Create a temporary file for credentials
-            with tempfile.NamedTemporaryFile(delete=False, suffix='.json', mode='w') as temp:
-                json.dump(client_config, temp)
-                temp_path = temp.name
-            
-            try:
-                # Create flow with redirect URI
-                redirect_uri = "https://prezlab-tms.streamlit.app/"
-                flow = InstalledAppFlow.from_client_secrets_file(
-                    temp_path, 
-                    SCOPES,
-                    redirect_uri=redirect_uri
-                )
-                
-                # Exchange code for token
-                try:
-                    flow.fetch_token(code=code_value)
-                    creds = flow.credentials
-                    
-                    # Store credentials in session state
-                    cred_key = f"google_{service_name}_creds"
-                    st.session_state[cred_key] = creds
-                    
-                    # Set backup auth completion flags
-                    st.session_state[f"{service_name}_auth_complete"] = True
-                    
-                    print(f"Authentication successful for {service_name}!")
-                    st.success(f"✅ Authentication successful for {service_name}!")
-                    
-                    # Create and return service
-                    api_version = 'v3' if service_name == 'drive' else 'v1'
-                    service = build(service_name, api_version, credentials=creds)
-                    return service
-                except Exception as e:
-                    print(f"Error exchanging code: {e}")
-                    if "invalid_grant" in str(e).lower():
-                        st.error("Authorization code expired or invalid. Please try again.")
-                    else:
-                        st.error(f"Authentication error: {str(e)}")
-                    
-                    # Clean up session state on failure
-                    for key in [f"google_{service_name}_creds", f"{service_name}_auth_complete"]:
-                        if key in st.session_state:
-                            del st.session_state[key]
-                    
-                    return None
-            finally:
-                # Clean up temporary file
-                try:
-                    os.unlink(temp_path)
-                except Exception as e:
-                    print(f"Failed to delete temporary file: {e}")
-        except Exception as e:
-            print(f"Error processing authorization code: {e}")
-            st.error(f"Error processing authorization code: {str(e)}")
-            return None
-    
-    # If we reach here, we don't have a code, so check for existing credentials
+    # First, check if we already have valid credentials for the service
     cred_key = f"google_{service_name}_creds"
-    if cred_key in st.session_state:
+    if cred_key in st.session_state and st.session_state[cred_key]:
         creds = st.session_state[cred_key]
-        # Refresh token if expired
-        if creds and hasattr(creds, 'expired') and creds.expired and hasattr(creds, 'refresh_token'):
+        
+        # Check if credentials are expired and need refresh
+        if hasattr(creds, 'expired') and creds.expired and hasattr(creds, 'refresh_token'):
             try:
-                print(f"Refreshing expired credentials for {service_name}")
+                logger.info(f"Refreshing expired credentials for {service_name}")
                 creds.refresh(Request())
                 st.session_state[cred_key] = creds
-                
-                # Mark as authenticated
-                st.session_state[f"{service_name}_auth_complete"] = True
             except Exception as e:
-                print(f"Failed to refresh credentials: {e}")
-                # Clear invalid credentials
-                for key in [cred_key, f"{service_name}_auth_complete"]:
-                    if key in st.session_state:
-                        del st.session_state[key]
-                creds = None
-    else:
-        creds = None
-    
-    # If we have valid credentials, build and return the service
-    if creds:
+                logger.error(f"Failed to refresh credentials: {e}")
+                # Don't delete credentials yet, try to use them anyway
+        
+        # Try to build the service with existing credentials
         try:
             api_version = 'v3' if service_name == 'drive' else 'v1'
             service = build(service_name, api_version, credentials=creds)
-            print(f"Successfully created {service_name} service using existing credentials")
+            logger.info(f"Successfully built {service_name} service using existing credentials")
             return service
         except Exception as e:
-            print(f"Error creating {service_name} service: {e}")
-            st.error(f"Error creating {service_name} service: {str(e)}")
-            
-            # Clear invalid credentials
-            for key in [cred_key, f"{service_name}_auth_complete"]:
-                if key in st.session_state:
-                    del st.session_state[key]
-            
-            return None
+            logger.error(f"Error building {service_name} service with existing credentials: {e}")
+            # Continue to authentication flow
     
-    # If we reach here, we need to initiate authentication flow
+    # Check if we should try the other service's credentials
+    other_service = 'drive' if service_name == 'gmail' else 'gmail'
+    other_cred_key = f"google_{other_service}_creds"
+    
+    if other_cred_key in st.session_state and st.session_state[other_cred_key]:
+        # Try to use credentials from the other service (they should work for both)
+        try:
+            logger.info(f"Trying to use {other_service} credentials for {service_name}")
+            creds = st.session_state[other_cred_key]
+            api_version = 'v3' if service_name == 'drive' else 'v1'
+            service = build(service_name, api_version, credentials=creds)
+            
+            # If successful, store these credentials for this service too
+            st.session_state[cred_key] = creds
+            logger.info(f"Successfully used {other_service} credentials for {service_name}")
+            return service
+        except Exception as e:
+            logger.error(f"Error using {other_service} credentials for {service_name}: {e}")
+            # Continue to authentication flow
+    
+    # If we reach here, we need to initiate the OAuth flow
     try:
         # Load client config from Streamlit secrets
-        try:
-            client_config_str = st.secrets["gcp"]["client_config"]
-            client_config = json.loads(client_config_str)
-        except Exception as e:
-            print(f"Error loading client config: {e}")
+        client_config_str = st.secrets["gcp"]["client_config"]
+        if not client_config_str:
+            logger.error("Google API client config not found in secrets")
             st.error("Google API credentials are missing. Please check your configuration.")
             return None
+            
+        client_config = json.loads(client_config_str)
         
         # Create a temporary file for credentials
         with tempfile.NamedTemporaryFile(delete=False, suffix='.json', mode='w') as temp:
@@ -190,8 +118,9 @@ def get_google_service(service_name):
             temp_path = temp.name
         
         try:
-            # Create flow with redirect URI
+            # Use a consistent redirect URI
             redirect_uri = "https://prezlab-tms.streamlit.app/"
+            logger.info(f"Using redirect URI: {redirect_uri}")
             
             flow = InstalledAppFlow.from_client_secrets_file(
                 temp_path, 
@@ -206,9 +135,18 @@ def get_google_service(service_name):
                 include_granted_scopes='true'
             )
             
+            # Save service name being authenticated to session state
+            st.session_state["authenticating_service"] = service_name
+            
             # Prompt user to authenticate
-            st.info(f"### {service_name.capitalize()} Authentication Required")
+            st.info(f"### Google Authentication Required")
             st.markdown(f"[Click here to authenticate with Google {service_name.capitalize()}]({auth_url})")
+            
+            # Add a cancel button
+            if st.button("Cancel Authentication"):
+                if "authenticating_service" in st.session_state:
+                    del st.session_state["authenticating_service"]
+                st.rerun()
             
             # Stop execution to wait for redirect
             st.stop()
@@ -217,9 +155,9 @@ def get_google_service(service_name):
             try:
                 os.unlink(temp_path)
             except Exception as e:
-                print(f"Failed to delete temporary file: {e}")
+                logger.warning(f"Failed to delete temporary file: {e}")
     except Exception as e:
-        print(f"Google Authentication Error: {e}")
+        logger.error(f"Google Authentication Error: {e}", exc_info=True)
         st.error(f"Failed to authenticate with Google: {str(e)}")
     
     return None
@@ -270,4 +208,51 @@ def process_oauth_callback(code):
                 pass
     except Exception as e:
         print(f"Error processing OAuth code: {e}")
+        return False
+    
+
+def handle_oauth_callback(code):
+    """Process Google OAuth callback code"""
+    try:
+        logger.info(f"Processing OAuth code: {code[:10]}..." if len(code) > 10 else code)
+        
+        # Load client config
+        client_config_str = st.secrets["gcp"]["client_config"]
+        client_config = json.loads(client_config_str)
+        
+        # Create a temporary file for credentials
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.json', mode='w') as temp:
+            json.dump(client_config, temp)
+            temp_path = temp.name
+        
+        try:
+            # Use the same URI that was used to initiate the flow
+            redirect_uri = "https://prezlab-tms.streamlit.app/"
+            
+            flow = InstalledAppFlow.from_client_secrets_file(
+                temp_path, 
+                SCOPES,
+                redirect_uri=redirect_uri
+            )
+            
+            # Exchange code for tokens
+            flow.fetch_token(code=code)
+            creds = flow.credentials
+            
+            # Store credentials in session state for both services
+            st.session_state["google_gmail_creds"] = creds
+            st.session_state["google_drive_creds"] = creds
+            
+            # Set all auth flags
+            st.session_state["gmail_auth_complete"] = True
+            st.session_state["drive_auth_complete"] = True
+            st.session_state["google_auth_complete"] = True
+            
+            logger.info("Google authentication successful for all services")
+            return True
+        finally:
+            # Clean up temporary file
+            os.unlink(temp_path)
+    except Exception as e:
+        logger.error(f"Error handling OAuth callback: {e}", exc_info=True)
         return False
