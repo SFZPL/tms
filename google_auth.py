@@ -102,18 +102,13 @@ def get_google_service(service_name):
                 # Check for authorization code in query parameters
                 query_params = st.query_params()
                 if "code" in query_params:
-                    code = st.query_params["code"]  # Get the first code value
-                    logger.info("Authorization code received from redirect")       
                     try:
+                        code = query_params["code"][0]  # Use first code value
                         flow.fetch_token(code=code)
                         creds = flow.credentials
                         st.session_state[cred_key] = creds
-                        
-                        # Clean up URL
-                        st.query_params.clear()
-                        
+                        st.session_state["auth_complete"] = True  # Set a flag instead of rerun
                         st.success("✅ Authentication successful!")
-                        st.rerun()
                     except Exception as e:
                         st.error(f"Authentication error: {str(e)}")
                         logger.error(f"OAuth token exchange error: {e}", exc_info=True)
