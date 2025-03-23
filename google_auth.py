@@ -223,3 +223,51 @@ def get_google_service(service_name):
         st.error(f"Failed to authenticate with Google: {str(e)}")
     
     return None
+
+def process_oauth_callback(code):
+    """Process OAuth callback code without disrupting session state"""
+    try:
+        print(f"Processing OAuth code: {code[:10]}..." if len(code) > 10 else code)
+        
+        # Load client config from Streamlit secrets
+        client_config_str = st.secrets["gcp"]["client_config"]
+        client_config = json.loads(client_config_str)
+        
+        # Create a temporary file for credentials
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.json', mode='w') as temp:
+            json.dump(client_config, temp)
+            temp_path = temp.name
+        
+        try:
+            # Consistent redirect URI
+            redirect_uri = "https://prezlab-tms.streamlit.app/"
+            flow = InstalledAppFlow.from_client_secrets_file(
+                temp_path, 
+                SCOPES,
+                redirect_uri=redirect_uri
+            )
+            
+            # Exchange code for token
+            flow.fetch_token(code=code)
+            creds = flow.credentials
+            
+            # Store credentials for both services to avoid multiple auth
+            st.session_state["google_gmail_creds"] = creds
+            st.session_state["google_drive_creds"] = creds
+            
+            # Set all auth flags
+            st.session_state["gmail_auth_complete"] = True
+            st.session_state["drive_auth_complete"] = True
+            st.session_state["google_auth_complete"] = True
+            
+            print("Authentication successful for all Google services!")
+            return True
+        finally:
+            # Clean up temporary file
+            try:
+                os.unlink(temp_path)
+            except:
+                pass
+    except Exception as e:
+        print(f"Error processing OAuth code: {e}")
+        return False

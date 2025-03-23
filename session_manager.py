@@ -105,39 +105,34 @@ class SessionManager:
     
     @staticmethod
     def logout(expired: bool = False):
-        """
-        Log out user and clear session state
-        
-        Args:
-            expired: Whether logout is due to session expiry
-        """
+        """Log out user and clear session state"""
         # Log the logout
         if st.session_state.get("logged_in") and st.session_state.get("user"):
             username = st.session_state.user.get("username", "Unknown")
             logger.info(f"User {username} logged out. Expired: {expired}")
         
-        # Clear all session state except debug flags
-        debug_mode = st.session_state.get("debug_mode")
+        # IMPORTANT FIX: Preserve Google credentials during logout
+        gmail_creds = st.session_state.get("google_gmail_creds")
+        drive_creds = st.session_state.get("google_drive_creds")
+        gmail_auth = st.session_state.get("gmail_auth_complete")
+        drive_auth = st.session_state.get("drive_auth_complete")
+        google_auth = st.session_state.get("google_auth_complete")
         
         # Clear state
         for key in list(st.session_state.keys()):
             if key != "debug_mode":
                 st.session_state.pop(key, None)
 
-        # Ensure google_auth_complete is reset
-        st.session_state.google_auth_complete = False
+        # Restore Google auth state if it was previously set
+        if gmail_creds:
+            st.session_state.google_gmail_creds = gmail_creds
+            st.session_state.gmail_auth_complete = gmail_auth
+        if drive_creds:
+            st.session_state.google_drive_creds = drive_creds
+            st.session_state.drive_auth_complete = drive_auth
+        if google_auth:
+            st.session_state.google_auth_complete = google_auth
         
-        # Restore debug mode if it was set
-        if debug_mode:
-            st.session_state.debug_mode = debug_mode
-        
-        # Re-initialize session
-        SessionManager.initialize_session()
-        
-        # Show expiry message if needed
-        if expired:
-            st.warning("Your session has expired. Please log in again.")
-    
     @staticmethod
     def clear_flow_data():
         """Clear all flow-related data but keep authentication"""

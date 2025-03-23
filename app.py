@@ -197,6 +197,12 @@ def validate_session():
         True if session is valid, False if expired or not logged in
     """
     from session_manager import SessionManager
+    # CRITICAL FIX: Skip validation if OAuth flow is in progress
+    if "code" in st.query_params:
+        return True
+        
+    if not st.session_state.get("logged_in", False):
+        return False
     
     # Initialize and check expiry
     if not SessionManager.check_session_expiry():
@@ -2603,6 +2609,25 @@ def main():
     
     # Initialize session
     SessionManager.initialize_session()
+
+    # CRITICAL FIX: Check for OAuth callback before any other logic
+    if "code" in st.query_params:
+        # Store the code and important session info
+        auth_code = st.query_params["code"]
+        was_logged_in = st.session_state.get("logged_in", False)
+        username = st.session_state.get("user", {}).get("username", "")
+        
+        # Process OAuth callback
+        from google_auth import process_oauth_callback
+        process_oauth_callback(auth_code)
+        
+        # Restore login state if it was previously logged in
+        if was_logged_in and username:
+            # Restore minimal login state to prevent full re-login
+            st.session_state.logged_in = True
+            st.session_state.user = {"username": username}
+            # Redirect to clear the code from URL (avoids reusing the code)
+            st.rerun()
     
     st.sidebar.write("Debug Info:")
     st.sidebar.write(f"Logged in: {st.session_state.get('logged_in', False)}")
