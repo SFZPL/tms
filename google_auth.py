@@ -3,6 +3,7 @@ import json
 import logging
 import tempfile
 import streamlit as st
+import time
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
@@ -103,33 +104,47 @@ def get_google_service(service_name):
                     redirect_uri=redirect_uri
                 )
                 
-                # Check for authorization code in query parameters
+                # Check for authorization code in query parameters# When handling the code exchange, modify this section:
                 if "code" in st.query_params:
                     try:
                         code = st.query_params["code"]
                         print(f"Authorization code received")
                         
-                        # Exchange code for token
-                        flow.fetch_token(code=code)
-                        creds = flow.credentials
-                        st.session_state[cred_key] = creds
-                        
-                        # Clean up URL
+                        # Clear query params BEFORE token exchange to prevent reuse
+                        code_value = code  # Save the code value
                         try:
-                            st.set_query_params()
+                            st.query_params.clear()
                         except:
                             pass
                         
-                        print("Authentication successful!")
-                        st.success("✅ Authentication successful!")
-                        time.sleep(1)  # Give UI time to update
-                        st.rerun()  # Rerun to clear URL parameters
+                        # Exchange code for token
+                        try:
+                            flow.fetch_token(code=code_value)
+                            creds = flow.credentials
+                            st.session_state[cred_key] = creds
+                            
+                            print("Authentication successful!")
+                            st.success("✅ Authentication successful!")
+                            time.sleep(1)  # Give UI time to update
+                            
+                            # Create and return service immediately without rerun
+                            api_version = 'v3' if service_name == 'drive' else 'v1'
+                            service = build(service_name, api_version, credentials=creds)
+                            return service
+                        except Exception as e:
+                            if "invalid_grant" in str(e).lower():
+                                st.error("Authorization code expired or invalid. Please try again.")
+                                # Force a full reset of credentials
+                                for k in list(st.session_state.keys()):
+                                    if "gmail" in k.lower() or "google" in k.lower():
+                                        del st.session_state[k]
+                            else:
+                                st.error(f"Authentication error: {str(e)}")
+                            st.stop()
                     except Exception as e:
-                        print(f"Error exchanging code for token: {e}")
-                        st.error(f"Authentication error: {str(e)}")
-                        if cred_key in st.session_state:
-                            del st.session_state[cred_key]
-                        st.stop()  # CRITICAL: Stop execution on error
+                        print(f"Error processing authorization code: {e}")
+                        st.error(f"Error processing authorization code: {str(e)}")
+                        st.stop()
                 else:
                     # Initiate authorization flow
                     auth_url, _ = flow.authorization_url(
