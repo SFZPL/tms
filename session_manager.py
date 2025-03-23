@@ -40,7 +40,7 @@ class SessionManager:
                     st.session_state[key] = None
             
             # IMPORTANT: Always explicitly set google_auth_complete
-            st.session_state.google_auth_complete = False
+            # st.session_state.google_auth_complete = False
             
             # Set default values
             st.session_state.debug_mode = None

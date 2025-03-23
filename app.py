@@ -149,6 +149,16 @@ def render_sidebar():
                 SessionManager.clear_flow_data()
                 st.rerun()
             
+            # Add Google Authentication button here
+            gmail_authenticated = "google_gmail_creds" in st.session_state
+            drive_authenticated = "google_drive_creds" in st.session_state
+            
+            st.subheader("Google Services")
+            google_status = "✅ Connected" if (gmail_authenticated and drive_authenticated) else "⚠️ Not connected"
+            if st.button(f"Google Auth ({google_status})"):
+                st.session_state.show_google_auth = True
+                st.rerun()
+            
             # Connection management
             st.subheader("Connection")
             if st.button("Reconnect to Odoo"):
@@ -2606,6 +2616,15 @@ def main():
     
     # Render sidebar
     render_sidebar()
+
+    # Add this section to show the Google Auth page on demand
+    if st.session_state.get("show_google_auth", False):
+        google_auth_page()
+        # Add button to return to main page
+        if st.button("Return to Main Page"):
+            st.session_state.pop("show_google_auth", None)
+            st.rerun()
+        return
     
     # Check for debug mode
     if "debug_mode" in st.session_state:
@@ -2627,8 +2646,8 @@ def main():
     if "logged_in" not in st.session_state or not st.session_state.logged_in:
         login_page()
     # Add Google auth step after login but before main workflow
-    elif "google_auth_complete" not in st.session_state or st.session_state.google_auth_complete == False:
-        google_auth_page()
+    # elif "google_auth_complete" not in st.session_state or st.session_state.google_auth_complete == False:
+    #     google_auth_page()
     elif "form_type" not in st.session_state:
         type_selection_page()
     else:
