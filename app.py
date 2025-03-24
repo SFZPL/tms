@@ -1075,10 +1075,10 @@ def finalize_adhoc_subtasks():
 
 
                 # Display a message to help user understand what's happening
-                st.info("Click the button above to proceed to designer selection, or you can view the task details in Odoo.")
+                st.info("Click the button below to proceed to designer selection, or you can view the task details in Odoo.")
 
             # Add a button to proceed instead of automatic rerun
-            proceed_button = st.button("Proceed to Designer Selection", type="primary")
+            proceed_button = st.form_submit_button("Proceed to Designer Selection", type="primary")
                 
             if proceed_button:
                 st.rerun()
