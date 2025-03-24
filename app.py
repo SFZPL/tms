@@ -909,40 +909,48 @@ def finalize_adhoc_subtasks():
             
         st.success(f"Created Parent Task in Odoo (ID: {parent_task_id})")
         
-        # Create Google Drive folder for this parent task
-        with st.spinner("Creating Google Drive folder for task..."):
+        # Create Google Drive folder structure for this parent task
+        with st.spinner("Creating Google Drive folder structure for task..."):
             # Sanitize folder name (replace characters not allowed in file names)
             folder_name = f"{parent_task_title} - {parent_task_id}"
             folder_name = folder_name.replace('/', '-').replace('\\', '-')
             
-            folder_id = create_folder(folder_name)
+            # Create folder structure with subfolders
+            from google_drive import create_folder_structure
+            folder_structure = create_folder_structure(
+                folder_name, 
+                subfolders=["MATERIAL", "DELIVERABLE"]
+            )
             
-            if folder_id:
-                folder_link = get_folder_link(folder_id)
-                folder_url = get_folder_url(folder_id)
+            if folder_structure:
+                # Store main folder info in session state
+                st.session_state.drive_folder_id = folder_structure['main_folder_id']
+                st.session_state.drive_folder_link = folder_structure['main_folder_link']
+                st.session_state.folder_structure = folder_structure
                 
-                st.success(f"Created Google Drive folder for this task")
-                
-                # Store folder info in session state
-                st.session_state.drive_folder_id = folder_id
-                st.session_state.drive_folder_link = folder_link
-                
-                # Update the parent task with the folder link
+                # Update the parent task with the folder links
                 try:
-                    # Update the task description to include the folder link
-                    updated_description = f"{parent_description}\n\n📁 Google Drive folder: {folder_url}"
+                    # Create a nicely formatted description with folder links
+                    updated_description = f"{parent_description}\n\n"
+                    updated_description += f"📁 **Google Drive Folders:**\n"
+                    updated_description += f"- Main Folder: {folder_structure['main_folder_url']}\n"
+                    
+                    # Add subfolder links if available
+                    for subfolder_name, subfolder_info in folder_structure['subfolders'].items():
+                        updated_description += f"- {subfolder_name}: {subfolder_info['url']}\n"
                     
                     models.execute_kw(
                         ODOO_DB, uid, ODOO_PASSWORD,
                         'project.task', 'write',
                         [[parent_task_id], {'description': updated_description}]
                     )
-                    logger.info(f"Updated task {parent_task_id} with Drive folder link")
+                    logger.info(f"Updated task {parent_task_id} with Drive folder structure links")
                 except Exception as e:
-                    logger.warning(f"Could not update task with folder link: {e}")
+                    logger.warning(f"Could not update task with folder links: {e}")
+                    
+                st.success(f"Created folder structure with MATERIAL and DELIVERABLE subfolders")
             else:
                 st.warning("Could not create Google Drive folder. Please check logs for details.")
-
         # Create subtasks
         subtasks = st.session_state.adhoc_subtasks
         created_subtasks = []
@@ -1056,9 +1064,16 @@ def finalize_adhoc_subtasks():
                 st.markdown(f"**Project:** {project_name}")
                 st.markdown(f"**Client:** {customer}")
                 
-                if folder_id:
-                    st.markdown(f"**📁 Google Drive Folder:** [Open Folder]({folder_link})")
                 
+                if 'drive_folder_id' in st.session_state and 'drive_folder_link' in st.session_state:
+                    st.markdown(f"**📁 Main Folder:** [Open Folder]({st.session_state.drive_folder_link})")
+                    
+                    # If we have subfolder information, display those links too
+                    if 'folder_structure' in st.session_state and 'subfolders' in st.session_state.folder_structure:
+                        for subfolder_name, subfolder_info in st.session_state.folder_structure['subfolders'].items():
+                            st.markdown(f"**📁 {subfolder_name}:** [Open Folder]({subfolder_info['link']})")
+
+
                 # Display a message to help user understand what's happening
                 st.info("Click the button above to proceed to designer selection, or you can view the task details in Odoo.")
 
@@ -1449,27 +1464,35 @@ def retainer_subtask_page():
                         
                     st.success(f"Created Subtask in Odoo (ID: {subtask_id})")
                 
-                # STEP 3: CREATE GOOGLE DRIVE FOLDER
-                with st.spinner("Creating Google Drive folder for task..."):
+                # STEP 3: CREATE GOOGLE DRIVE FOLDER STRUCTURE
+                with st.spinner("Creating Google Drive folder structure for task..."):
                     # Sanitize folder name
                     folder_name = f"{parent_project_name} - {subtask_title} - {subtask_id}"
                     folder_name = folder_name.replace('/', '-').replace('\\', '-')
                     
-                    folder_id = create_folder(folder_name)
+                    # Create folder structure with subfolders
+                    from google_drive import create_folder_structure
+                    folder_structure = create_folder_structure(
+                        folder_name, 
+                        subfolders=["MATERIAL", "DELIVERABLE"]
+                    )
                     
-                    if folder_id:
-                        folder_link = get_folder_link(folder_id)
-                        folder_url = get_folder_url(folder_id)
-                        
-                        st.success(f"Created Google Drive folder for this task")
-                        
-                        # Store folder info in session state
-                        st.session_state.drive_folder_id = folder_id
-                        st.session_state.drive_folder_link = folder_link
-                        
-                        # Update both parent and subtask with the folder link
+                    if folder_structure:
+                        # Store main folder info in session state
+                        st.session_state.drive_folder_id = folder_structure['main_folder_id']
+                        st.session_state.drive_folder_link = folder_structure['main_folder_link']
+                        st.session_state.folder_structure = folder_structure
+                        # Update both parent and subtask with the folder links
                         try:
-                            # Update the parent task description to include the folder link
+                            # Create a nicely formatted description with folder links
+                            folder_description = f"\n\n📁 **Google Drive Folders:**\n"
+                            folder_description += f"- Main Folder: {folder_structure['main_folder_url']}\n"
+                            
+                            # Add subfolder links if available
+                            for subfolder_name, subfolder_info in folder_structure['subfolders'].items():
+                                folder_description += f"- {subfolder_name}: {subfolder_info['url']}\n"
+                            
+                            # Update parent task description
                             parent_task_desc = models.execute_kw(
                                 ODOO_DB, uid, ODOO_PASSWORD,
                                 'project.task', 'read',
@@ -1477,7 +1500,7 @@ def retainer_subtask_page():
                                 {'fields': ['description']}
                             )[0]['description']
                             
-                            updated_parent_desc = f"{parent_task_desc}\n\n📁 Google Drive folder: {folder_url}"
+                            updated_parent_desc = f"{parent_task_desc}{folder_description}"
                             
                             models.execute_kw(
                                 ODOO_DB, uid, ODOO_PASSWORD,
@@ -1485,7 +1508,7 @@ def retainer_subtask_page():
                                 [[parent_task_id], {'description': updated_parent_desc}]
                             )
                             
-                            # Update the subtask description to include the folder link
+                            # Update subtask description
                             subtask_desc = models.execute_kw(
                                 ODOO_DB, uid, ODOO_PASSWORD,
                                 'project.task', 'read',
@@ -1493,7 +1516,7 @@ def retainer_subtask_page():
                                 {'fields': ['description']}
                             )[0]['description']
                             
-                            updated_subtask_desc = f"{subtask_desc}\n\n📁 Google Drive folder: {folder_url}"
+                            updated_subtask_desc = f"{subtask_desc}{folder_description}"
                             
                             models.execute_kw(
                                 ODOO_DB, uid, ODOO_PASSWORD,
@@ -1501,9 +1524,10 @@ def retainer_subtask_page():
                                 [[subtask_id], {'description': updated_subtask_desc}]
                             )
                             
-                            logger.info(f"Updated tasks with Drive folder link")
+                            logger.info(f"Updated tasks with Drive folder structure links")
+                            st.success(f"Created folder structure with MATERIAL and DELIVERABLE subfolders")
                         except Exception as e:
-                            logger.warning(f"Could not update tasks with folder link: {e}")
+                            logger.warning(f"Could not update tasks with folder links: {e}")
                     else:
                         st.warning("Could not create Google Drive folder. Please check logs for details.")
                 

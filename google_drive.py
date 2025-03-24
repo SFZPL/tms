@@ -134,3 +134,48 @@ def get_folder_url(folder_id):
     except Exception as e:
         logger.error(f"Error creating shareable link: {e}", exc_info=True)
         return None
+    
+def create_folder_structure(main_folder_name, subfolders=None, parent_folder_id=None):
+    """
+    Creates a folder with optional subfolders in Google Drive.
+    
+    Args:
+        main_folder_name: Name of the main folder
+        subfolders: List of subfolder names to create (optional)
+        parent_folder_id: ID of the parent folder (optional)
+        
+    Returns:
+        Dictionary with main folder ID and subfolder IDs
+    """
+    if not main_folder_name:
+        logger.error("Main folder name is required")
+        return None
+    
+    # Create main folder
+    main_folder_id = create_folder(main_folder_name, parent_folder_id)
+    
+    if not main_folder_id:
+        logger.error(f"Failed to create main folder: {main_folder_name}")
+        return None
+    
+    result = {
+        'main_folder_id': main_folder_id,
+        'main_folder_link': get_folder_link(main_folder_id),
+        'main_folder_url': get_folder_url(main_folder_id),
+        'subfolders': {}
+    }
+    
+    # Create subfolders if requested
+    if subfolders and isinstance(subfolders, list) and main_folder_id:
+        for subfolder_name in subfolders:
+            subfolder_id = create_folder(subfolder_name, main_folder_id)
+            if subfolder_id:
+                result['subfolders'][subfolder_name] = {
+                    'id': subfolder_id,
+                    'link': get_folder_link(subfolder_id),
+                    'url': get_folder_url(subfolder_id)
+                }
+            else:
+                logger.warning(f"Failed to create subfolder: {subfolder_name}")
+    
+    return result
