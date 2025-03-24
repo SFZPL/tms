@@ -94,44 +94,71 @@ class SessionManager:
         st.session_state.logged_in = True
         st.session_state.login_time = login_time
         st.session_state.session_expiry = session_expiry
-        # FORCE RESET GOOGLE AUTH
-        st.session_state.google_auth_complete = False
         st.session_state.user = {
             "username": username,
             "session_id": str(uuid.uuid4())
         }
         
+        # IMPORTANT: Restore Google credentials if previously saved
+        if "_persistent_google_creds" in st.session_state:
+            saved_creds = st.session_state._persistent_google_creds
+            if saved_creds:
+                # Restore all Google credentials
+                st.session_state.google_gmail_creds = saved_creds.get("gmail_creds")
+                st.session_state.google_drive_creds = saved_creds.get("drive_creds") 
+                st.session_state.gmail_auth_complete = saved_creds.get("gmail_auth_complete", False)
+                st.session_state.drive_auth_complete = saved_creds.get("drive_auth_complete", False)
+                st.session_state.google_auth_complete = saved_creds.get("google_auth_complete", False)
+        
         logger.info(f"User {username} logged in. Session expires at {session_expiry}")
     
     @staticmethod
     def logout(expired: bool = False):
-        """Log out user and clear session state"""
+        """
+        Log out user and clear session state
+        
+        Args:
+            expired: Whether logout is due to session expiry
+        """
         # Log the logout
         if st.session_state.get("logged_in") and st.session_state.get("user"):
             username = st.session_state.user.get("username", "Unknown")
             logger.info(f"User {username} logged out. Expired: {expired}")
         
-        # IMPORTANT FIX: Preserve Google credentials during logout
-        gmail_creds = st.session_state.get("google_gmail_creds")
-        drive_creds = st.session_state.get("google_drive_creds")
-        gmail_auth = st.session_state.get("gmail_auth_complete")
-        drive_auth = st.session_state.get("drive_auth_complete")
-        google_auth = st.session_state.get("google_auth_complete")
+        # IMPORTANT: Save Google credentials before clearing session
+        google_creds = {
+            "gmail_creds": st.session_state.get("google_gmail_creds"),
+            "drive_creds": st.session_state.get("google_drive_creds"),
+            "gmail_auth_complete": st.session_state.get("gmail_auth_complete", False),
+            "drive_auth_complete": st.session_state.get("drive_auth_complete", False),
+            "google_auth_complete": st.session_state.get("google_auth_complete", False)
+        }
+        
+        # Persist credentials in Streamlit's browser-based storage
+        if google_creds["gmail_creds"]:
+            st.session_state["_persistent_google_creds"] = google_creds
+        
+        # Clear most state but keep debug and persistence
+        debug_mode = st.session_state.get("debug_mode")
+        persistent_creds = st.session_state.get("_persistent_google_creds")
         
         # Clear state
         for key in list(st.session_state.keys()):
-            if key != "debug_mode":
+            if key not in ["debug_mode", "_persistent_google_creds"]:
                 st.session_state.pop(key, None)
-
-        # Restore Google auth state if it was previously set
-        if gmail_creds:
-            st.session_state.google_gmail_creds = gmail_creds
-            st.session_state.gmail_auth_complete = gmail_auth
-        if drive_creds:
-            st.session_state.google_drive_creds = drive_creds
-            st.session_state.drive_auth_complete = drive_auth
-        if google_auth:
-            st.session_state.google_auth_complete = google_auth
+        
+        # Restore persistent values
+        if debug_mode:
+            st.session_state.debug_mode = debug_mode
+        if persistent_creds:
+            st.session_state._persistent_google_creds = persistent_creds
+        
+        # Re-initialize session
+        SessionManager.initialize_session()
+        
+        # Show expiry message if needed
+        if expired:
+            st.warning("Your session has expired. Please log in again.")
         
     @staticmethod
     def clear_flow_data():
