@@ -1059,15 +1059,15 @@ def finalize_adhoc_subtasks():
                 if folder_id:
                     st.markdown(f"**📁 Google Drive Folder:** [Open Folder]({folder_link})")
                 
-                # Add a button to proceed instead of automatic rerun
-                proceed_button = st.button("Proceed to Designer Selection", type="primary")
-                
-                if proceed_button:
-                    st.rerun()
-                
                 # Display a message to help user understand what's happening
                 st.info("Click the button above to proceed to designer selection, or you can view the task details in Odoo.")
-    
+
+            # Add a button to proceed instead of automatic rerun
+            proceed_button = st.button("Proceed to Designer Selection", type="primary")
+                
+            if proceed_button:
+                st.rerun()
+
     except Exception as e:
         st.error(f"An error occurred: {str(e)}")
         logger.error(f"Error in finalize_adhoc_subtasks: {e}", exc_info=True)
