@@ -1885,9 +1885,26 @@ def email_analysis_page():
                 st.session_state.search_query = ""
                 st.rerun()
     
-    # Form for email analysis
-    with st.form("email_analysis_form"):
-        st.subheader("Select and Analyze Email")
+    # SKIP OPTION - always available outside any form
+    if st.button("Skip Email Analysis", key="skip_outside"):
+        st.session_state.email_analysis_done = True
+        st.session_state.email_analysis_skipped = True
+        st.rerun()
+    
+    # Check for Gmail authentication status BEFORE any forms
+    gmail_authenticated = "google_gmail_creds" in st.session_state
+    
+    if not gmail_authenticated:
+        # Authentication UI - completely outside of any form
+        st.info("### Google Authentication Required")
+        st.markdown("[Click here to authenticate with Google Gmail](https://prezlab-tms.streamlit.app/)")
+        st.warning("You need to authenticate with Gmail before analyzing emails")
+        return  # Exit the function early - don't show any forms
+    
+    # Only proceed with email fetching if already authenticated
+    # Email Analysis Options Form
+    with st.form("email_analysis_options"):
+        st.subheader("Email Analysis Options")
         
         # Checkbox to enable/disable email analysis
         use_email_analysis = st.checkbox("Use Email Analysis to Enhance Task Details", value=True)
@@ -1904,41 +1921,33 @@ def email_analysis_page():
             
             # Number of emails to fetch
             email_limit = st.slider("Number of emails to fetch", min_value=5, max_value=100, value=50)
-            
-            # Form submit buttons
-            col1, col2 = st.columns(2)
-            with col1:
-                fetch_emails = st.form_submit_button("Fetch Emails")
-            with col2:
-                skip_analysis = st.form_submit_button("Skip Email Analysis")
-        else:
-            skip_analysis = st.form_submit_button("Skip Email Analysis")
         
-        if skip_analysis:
-            # Set flag to skip email analysis
-            st.session_state.email_analysis_done = True
-            st.session_state.email_analysis_skipped = True
-            st.rerun()
-        
-        if fetch_emails and use_email_analysis:
-            with st.spinner("Connecting to Gmail..."):
-                try:
-                    gmail_service = initialize_gmail_connection()
-                    if gmail_service:
-                        with st.spinner(f"Fetching up to {email_limit} emails..."):
-                            recent_emails = fetch_recent_emails(gmail_service, total_emails=email_limit, query=search_query)
-                            
-                            if show_threads:
-                                from gmail_integration import extract_email_threads
-                                threads = extract_email_threads(recent_emails)
-                                st.session_state.email_threads = threads
-                            
-                            st.session_state.recent_emails = recent_emails
-                            st.session_state.show_threads = show_threads
-                    else:
-                        st.error("Failed to connect to Gmail. Please check your credentials.")
-                except Exception as e:
-                    st.error(f"Error connecting to Gmail: {str(e)}")
+        # Form submit button
+        fetch_emails = st.form_submit_button("Fetch Emails")
+    
+    # Handle form submission OUTSIDE the form
+    if fetch_emails and use_email_analysis:
+        with st.spinner("Connecting to Gmail..."):
+            try:
+                # Gmail service initialization now happens outside any form
+                gmail_service = get_gmail_service()
+                
+                if gmail_service:
+                    with st.spinner(f"Fetching up to {email_limit} emails..."):
+                        recent_emails = fetch_recent_emails(gmail_service, total_emails=email_limit, query=search_query)
+                        
+                        if show_threads:
+                            from gmail_integration import extract_email_threads
+                            threads = extract_email_threads(recent_emails)
+                            st.session_state.email_threads = threads
+                        
+                        st.session_state.recent_emails = recent_emails
+                        st.session_state.show_threads = show_threads
+                        st.rerun()  # Refresh to show results
+                else:
+                    st.error("Failed to connect to Gmail. Please check your credentials.")
+            except Exception as e:
+                st.error(f"Error connecting to Gmail: {str(e)}")
     
     # Display emails or threads if fetched
     if "recent_emails" in st.session_state:
@@ -2005,7 +2014,7 @@ def email_analysis_page():
                             
                             st.markdown("---")
                     
-                    # Now create a form for analyzing
+                    # Now create a form for analyzing - separate from thread selection
                     with st.form("analyze_thread_form"):
                         st.subheader("Analyze Selected Thread")
                         
@@ -2019,44 +2028,39 @@ def email_analysis_page():
                         
                         # This is the submit button
                         analyze_thread_button = st.form_submit_button("Analyze Selected Emails")
-                        
-                        if analyze_thread_button:
-                            if include_emails:
-                                with st.spinner("Analyzing emails with AI..."):
-                                    # Combine emails and analyze
-                                    combined_text = "Combined Email Thread:\n\n"
-                                    for i in include_emails:
-                                        email = selected_thread[i]
-                                        combined_text += f"Email {i+1}:\n"
-                                        combined_text += f"From: {email.get('from', 'Unknown')}\n"
-                                        combined_text += f"Subject: {email.get('subject', 'No Subject')}\n"
-                                        combined_text += f"Content: {email.get('body', '')}\n\n"
-                                    
-                                    # Analyze the combined text
-                                    analysis_results = analyze_email(combined_text)
-                                    
-                                    # Store and proceed
-                                    st.session_state.email_analysis = analysis_results
-                                    st.session_state.email_analysis_done = True
-                                    st.session_state.email_analysis_skipped = False
-                                    st.rerun()
-                            else:
-                                st.warning("Please select at least one email to analyze.")
+                    
+                    # Handle analysis OUTSIDE the form
+                    if analyze_thread_button:
+                        if include_emails:
+                            with st.spinner("Analyzing emails with AI..."):
+                                # Combine emails and analyze
+                                combined_text = "Combined Email Thread:\n\n"
+                                for i in include_emails:
+                                    email = selected_thread[i]
+                                    combined_text += f"Email {i+1}:\n"
+                                    combined_text += f"From: {email.get('from', 'Unknown')}\n"
+                                    combined_text += f"Subject: {email.get('subject', 'No Subject')}\n"
+                                    combined_text += f"Content: {email.get('body', '')}\n\n"
+                                
+                                # Analyze the combined text
+                                analysis_results = analyze_email(combined_text)
+                                
+                                # Store and proceed
+                                st.session_state.email_analysis = analysis_results
+                                st.session_state.email_analysis_done = True
+                                st.session_state.email_analysis_skipped = False
+                                st.rerun()
+                        else:
+                            st.warning("Please select at least one email to analyze.")
                 else:
                     st.warning("No threads match your search. Try different terms.")
             else:
                 st.warning("No email threads found. Try different search terms.")
                 
-                # Button to try again
+                # Button to try again - outside any form
                 if st.button("Try Different Search"):
                     st.session_state.pop("recent_emails", None)
                     st.session_state.pop("email_threads", None)
-                    st.rerun()
-                
-                # Skip option
-                if st.button("Skip Email Analysis"):
-                    st.session_state.email_analysis_done = True
-                    st.session_state.email_analysis_skipped = True
                     st.rerun()
         
         # Individual emails view (not threads)
@@ -2067,7 +2071,8 @@ def email_analysis_page():
                 
                 # Create searchable dropdown for individual emails
                 email_search = st.text_input("Search within found emails:", 
-                                   help="Type to filter the email list below")
+                                   help="Type to filter the email list below",
+                                   key="email_search_indiv")
                 
                 # Filter emails based on search
                 filtered_emails = []
@@ -2106,35 +2111,25 @@ def email_analysis_page():
                         else:
                             st.markdown(f"**Content:**\n{body}")
                     
-                    # Form for analyzing the email
-                    with st.form("analyze_email_form"):
-                        st.subheader("Analyze Selected Email")
-                        analyze_button = st.form_submit_button("Analyze this Email")
-                        
-                        if analyze_button:
-                            with st.spinner("Analyzing email with AI..."):
-                                email_text = f"Subject: {selected_email.get('subject', '')}\n\nBody: {selected_email.get('body', '')}"
-                                analysis_results = analyze_email(email_text)
-                                
-                                # Store analysis results
-                                st.session_state.email_analysis = analysis_results
-                                st.session_state.email_analysis_done = True
-                                st.session_state.email_analysis_skipped = False
-                                st.rerun()
+                    # Single email analysis button - outside forms
+                    if st.button("Analyze this Email", key="analyze_single_email"):
+                        with st.spinner("Analyzing email with AI..."):
+                            email_text = f"Subject: {selected_email.get('subject', '')}\n\nBody: {selected_email.get('body', '')}"
+                            analysis_results = analyze_email(email_text)
+                            
+                            # Store analysis results
+                            st.session_state.email_analysis = analysis_results
+                            st.session_state.email_analysis_done = True
+                            st.session_state.email_analysis_skipped = False
+                            st.rerun()
                 else:
                     st.warning("No emails match your search. Try different terms.")
             else:
                 st.warning("No emails found. Try different search terms.")
                 
-                # Button to try again
-                if st.button("Try Different Search"):
+                # Button to try again - outside any form
+                if st.button("Try Different Search", key="try_diff_search_indiv"):
                     st.session_state.pop("recent_emails", None)
-                    st.rerun()
-                
-                # Skip option
-                if st.button("Skip Email Analysis"):
-                    st.session_state.email_analysis_done = True
-                    st.session_state.email_analysis_skipped = True
                     st.rerun()
     
     # Display analysis results if available
@@ -2151,7 +2146,7 @@ def email_analysis_page():
             else:
                 st.write(analysis_results)
         
-        # Continue button
+        # Continue button - outside any form
         if st.button("Continue to Parent Task Details", type="primary"):
             st.rerun()
 
