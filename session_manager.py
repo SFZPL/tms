@@ -2,6 +2,9 @@ import streamlit as st
 from datetime import datetime, timedelta
 import uuid
 import logging
+import sqlite3
+import pickle
+import base64
 from typing import Dict, Any, Optional
 
 # Configure logging
@@ -287,3 +290,121 @@ class SessionManager:
             return False
         
         return True
+    
+    @staticmethod
+    def get_user_by_email(email):
+        """Get user data from database by email"""
+        conn = sqlite3.connect('user_data.db')
+        c = conn.cursor()
+        c.execute("SELECT email, odoo_user_id, google_tokens FROM users WHERE email = ?", (email,))
+        user_data = c.fetchone()
+        conn.close()
+        return user_data
+
+    @staticmethod
+    def save_google_tokens(email, tokens):
+        """Save encrypted Google tokens to database"""
+        if not email or not tokens:
+            return False
+            
+        # Serialize and encrypt tokens
+        serialized = pickle.dumps(tokens)
+        encrypted = cipher.encrypt(serialized)
+        encoded = base64.b64encode(encrypted).decode()
+        
+        # Save to database
+        conn = sqlite3.connect('user_data.db')
+        c = conn.cursor()
+        c.execute('''
+        INSERT OR REPLACE INTO users (email, google_tokens, last_login) 
+        VALUES (?, ?, datetime('now'))
+        ''', (email, encoded))
+        conn.commit()
+        conn.close()
+        return True
+
+    @staticmethod
+    def load_google_tokens(email):
+        """Load and decrypt Google tokens from database"""
+        conn = sqlite3.connect('user_data.db')
+        c = conn.cursor()
+        c.execute("SELECT google_tokens FROM users WHERE email = ?", (email,))
+        result = c.fetchone()
+        conn.close()
+        
+        if not result or not result[0]:
+            return None
+            
+        try:
+            # Decrypt and deserialize
+            encoded = result[0]
+            encrypted = base64.b64decode(encoded)
+            decrypted = cipher.decrypt(encrypted)
+            tokens = pickle.loads(decrypted)
+            return tokens
+        except Exception as e:
+            logger.error(f"Error decrypting tokens: {e}")
+            return None
+        
+# Add to session_manager.py
+
+@staticmethod
+def get_user_by_email(email):
+    """Get user data from database by email"""
+    conn = sqlite3.connect('user_data.db')
+    c = conn.cursor()
+    c.execute("SELECT email, odoo_user_id, google_tokens FROM users WHERE email = ?", (email,))
+    user_data = c.fetchone()
+    conn.close()
+    return user_data
+
+@staticmethod
+def save_google_tokens(email, tokens):
+    """Save encrypted Google tokens to database"""
+    if not email or not tokens:
+        return False
+        
+    # Import dependencies here to avoid circular imports
+    from app import cipher
+    
+    # Serialize and encrypt tokens
+    serialized = pickle.dumps(tokens)
+    encrypted = cipher.encrypt(serialized)
+    encoded = base64.b64encode(encrypted).decode()
+    
+    # Save to database
+    conn = sqlite3.connect('user_data.db')
+    c = conn.cursor()
+    c.execute('''
+    INSERT OR REPLACE INTO users (email, google_tokens, last_login) 
+    VALUES (?, ?, datetime('now'))
+    ''', (email, encoded))
+    conn.commit()
+    conn.close()
+    return True
+
+@staticmethod
+def load_google_tokens(email):
+    """Load and decrypt Google tokens from database"""
+    # Import dependencies here to avoid circular imports
+    from app import cipher
+    
+    conn = sqlite3.connect('user_data.db')
+    c = conn.cursor()
+    c.execute("SELECT google_tokens FROM users WHERE email = ?", (email,))
+    result = c.fetchone()
+    conn.close()
+    
+    if not result or not result[0]:
+        return None
+        
+    try:
+        # Decrypt and deserialize
+        encoded = result[0]
+        encrypted = base64.b64decode(encoded)
+        decrypted = cipher.decrypt(encrypted)
+        tokens = pickle.loads(decrypted)
+        return tokens
+    except Exception as e:
+        logger.error(f"Error decrypting tokens: {e}")
+        return None

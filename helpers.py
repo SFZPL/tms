@@ -511,6 +511,68 @@ def get_client_success_executives_odoo(models: xmlrpc.client.ServerProxy, uid: i
             st.error(f"Failed to retrieve client success executives: {e}")
             return []
 
+def map_streamlit_to_odoo_user(email, models, uid):
+    """
+    Find the Odoo user corresponding to a Streamlit user email
+    
+    Args:
+        email: Email address of the Streamlit user
+        models: Odoo models proxy
+        uid: User ID
+        
+    Returns:
+        Odoo user record if found, None otherwise
+    """
+    try:
+        # Search for users with matching email
+        user_ids = models.execute_kw(
+            ODOO_DB, uid, ODOO_PASSWORD,
+            'res.users', 'search_read',
+            [[['email', '=', email]]],
+            {'fields': ['id', 'name', 'email', 'login']}
+        )
+        
+        if user_ids:
+            # Found a matching user
+            odoo_user = user_ids[0]
+            logger.info(f"Mapped Streamlit user {email} to Odoo user ID {odoo_user['id']}")
+            return odoo_user
+            
+        # If no exact match, try with login field (sometimes used as email)
+        user_ids = models.execute_kw(
+            ODOO_DB, uid, ODOO_PASSWORD,
+            'res.users', 'search_read',
+            [[['login', '=', email]]],
+            {'fields': ['id', 'name', 'email', 'login']}
+        )
+        
+        if user_ids:
+            odoo_user = user_ids[0]
+            logger.info(f"Mapped Streamlit user {email} to Odoo user ID {odoo_user['id']} using login field")
+            return odoo_user
+        
+        # Try partial match (email might be stored with different capitalization)
+        user_ids = models.execute_kw(
+            ODOO_DB, uid, ODOO_PASSWORD,
+            'res.users', 'search_read',
+            [[]],
+            {'fields': ['id', 'name', 'email', 'login']}
+        )
+        
+        for user in user_ids:
+            user_email = user.get('email', '').lower()
+            user_login = user.get('login', '').lower()
+            
+            if email.lower() == user_email or email.lower() == user_login:
+                logger.info(f"Mapped Streamlit user {email} to Odoo user ID {user['id']} using case-insensitive match")
+                return user
+        
+        logger.warning(f"No Odoo user found with email {email}")
+        return None
+    except Exception as e:
+        logger.error(f"Error mapping Streamlit to Odoo user: {e}", exc_info=True)
+        return None
+
 def get_service_category_1_options(models: xmlrpc.client.ServerProxy, uid: int) -> List[Tuple[int, str]]:
     """
     Retrieves a list of service category 1 options from Odoo with their IDs.

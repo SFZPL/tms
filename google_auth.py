@@ -4,6 +4,8 @@ import logging
 import tempfile
 import streamlit as st
 import time
+# Add at the top of google_auth.py
+from datetime import datetime
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
@@ -216,7 +218,7 @@ def handle_oauth_callback(code):
     try:
         logger.info(f"Processing OAuth code: {code[:10]}..." if len(code) > 10 else code)
         
-        # Load client config
+        # Load client config from Streamlit secrets
         client_config_str = st.secrets["gcp"]["client_config"]
         client_config = json.loads(client_config_str)
         
@@ -248,11 +250,45 @@ def handle_oauth_callback(code):
             st.session_state["drive_auth_complete"] = True
             st.session_state["google_auth_complete"] = True
             
+            # Save tokens to database if user is logged in with Streamlit auth
+            if st.experimental_user.email:
+                try:
+                    # Import here to avoid circular imports
+                    from session_manager import SessionManager
+                    
+                    # Package tokens for storage
+                    google_tokens = {
+                        "gmail_creds": creds,
+                        "drive_creds": creds,
+                        "gmail_auth_complete": True,
+                        "drive_auth_complete": True,
+                        "google_auth_complete": True,
+                        "timestamp": datetime.now().isoformat()
+                    }
+                    
+                    # Save to database
+                    result = SessionManager.save_google_tokens(st.experimental_user.email, google_tokens)
+                    if result:
+                        logger.info(f"Successfully saved Google credentials for {st.experimental_user.email}")
+                    else:
+                        logger.warning(f"Failed to save Google credentials for {st.experimental_user.email}")
+                        
+                except ImportError:
+                    logger.error("Could not import SessionManager - token persistence will not work")
+                except Exception as db_error:
+                    logger.error(f"Error saving tokens to database: {str(db_error)}", exc_info=True)
+                    # Continue anyway since we have tokens in session
+            else:
+                logger.warning("User not authenticated with Streamlit - cannot persist tokens")
+            
             logger.info("Google authentication successful for all services")
             return True
         finally:
             # Clean up temporary file
-            os.unlink(temp_path)
+            try:
+                os.unlink(temp_path)
+            except Exception as file_error:
+                logger.warning(f"Error cleaning up temporary file: {str(file_error)}")
     except Exception as e:
-        logger.error(f"Error handling OAuth callback: {e}", exc_info=True)
+        logger.error(f"Error handling OAuth callback: {str(e)}", exc_info=True)
         return False
