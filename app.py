@@ -1,4 +1,13 @@
 import streamlit as st
+
+# Set page config
+st.set_page_config(
+    page_title="Task Management System",
+    page_icon="📋",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
 import re
 import os
 import pandas as pd
@@ -154,13 +163,6 @@ from designer_selector import (
     rank_designers_by_skill_match
 )
 
-# Set page config
-st.set_page_config(
-    page_title="Task Management System",
-    page_icon="📋",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
 
 # -------------------------------
 # SIDEBAR
