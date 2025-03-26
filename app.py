@@ -1,13 +1,4 @@
 import streamlit as st
-
-# Set page config
-st.set_page_config(
-    page_title="Task Management System",
-    page_icon="📋",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
-
 import re
 import os
 import pandas as pd
@@ -18,8 +9,6 @@ import logging
 from typing import Dict, List, Tuple, Optional, Any, Union
 from google_drive import create_folder, get_folder_link, get_folder_url
 from config import get_secret
-from session_manager import SessionManager
-
 # In app.py, add a try/except block around the debug_utils import
 try:
     from debug_utils import inject_debug_page, debug_function, SystemDebugger
@@ -34,42 +23,6 @@ except ImportError:
         def streamlit_debug_page(self): pass
 import google_auth
 from datetime import datetime
-
-import sqlite3
-import pickle
-import base64
-from cryptography.fernet import Fernet
-
-# Encryption setup - store the key in Streamlit secrets
-def get_encryption_key():
-    if "ENCRYPTION_KEY" not in st.secrets:
-        # Generate a key first time if it doesn't exist
-        key = Fernet.generate_key()
-        st.warning(f"Add this key to your secrets.toml: ENCRYPTION_KEY='{key.decode()}'")
-        return key
-    return st.secrets["ENCRYPTION_KEY"].encode()
-
-# Initialize encryption
-encryption_key = get_encryption_key()
-cipher = Fernet(encryption_key)
-
-# Database setup
-def init_db():
-    conn = sqlite3.connect('user_data.db')
-    c = conn.cursor()
-    c.execute('''
-    CREATE TABLE IF NOT EXISTS users (
-        email TEXT PRIMARY KEY,
-        odoo_user_id INTEGER,
-        google_tokens TEXT,
-        last_login DATETIME
-    )
-    ''')
-    conn.commit()
-    conn.close()
-
-# Initialize database
-init_db()
 
 
 def add_debug_sidebar(debugger: SystemDebugger):
@@ -150,8 +103,7 @@ from helpers import (
     get_project_id_by_name,
     update_task_designer,
     get_odoo_connection,
-    check_odoo_connection,
-    map_streamlit_to_odoo_user
+    check_odoo_connection
 )
 from gmail_integration import get_gmail_service, fetch_recent_emails
 from azure_llm import analyze_email
@@ -163,6 +115,13 @@ from designer_selector import (
     rank_designers_by_skill_match
 )
 
+# Set page config
+st.set_page_config(
+    page_title="Task Management System",
+    page_icon="📋",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
 # -------------------------------
 # SIDEBAR
@@ -557,12 +516,9 @@ def adhoc_parent_task_page():
                 client_success_exec_options = get_client_success_executives_odoo(models, uid)
                 if client_success_exec_options:
                     exec_options = [(user['id'], user['name']) for user in client_success_exec_options]
-                    default_index = set_default_client_success_exec(exec_options)
-                    
                     client_success_executive = st.selectbox(
                         "Client Success Executive", 
                         options=exec_options, 
-                        index=default_index,  # Pre-select current user
                         format_func=lambda x: x[1],
                         help="Select the responsible client success executive"
                     )
@@ -1198,42 +1154,10 @@ def retainer_parent_task_page():
             client_success_exec_options = get_client_success_executives_odoo(models, uid)
             if client_success_exec_options:
                 exec_options = [(user['id'], user['name']) for user in client_success_exec_options]
-                
-                # Set default to current user if available
-                default_index = 0  # Default to first option
-                
-                # Check if we have the current user's Odoo ID
-                if "user" in st.session_state and st.session_state.user.get("odoo_user_id"):
-                    odoo_user_id = st.session_state.user.get("odoo_user_id")
-                    
-                    # Find the index in exec_options where the ID matches
-                    for i, option in enumerate(exec_options):
-                        if option[0] == odoo_user_id:
-                            default_index = i
-                            break
-                
-                # If using Streamlit auth but no mapping exists yet, try to find one
-                elif st.experimental_user.email and "odoo_user_id" not in st.session_state.user:
-                    # Try to map the user
-                    odoo_user = map_streamlit_to_odoo_user(st.experimental_user.email, models, uid)
-                    if odoo_user:
-                        # Save the mapping for future use
-                        st.session_state.user["odoo_user_id"] = odoo_user['id']
-                        
-                        # Find the index
-                        for i, option in enumerate(exec_options):
-                            if option[0] == odoo_user['id']:
-                                default_index = i
-                                break
-                
-                retainer_client_success_exec = st.selectbox(
-                    "Client Success Executive", 
-                    options=exec_options, 
-                    index=default_index,  # Use the found index
-                    format_func=lambda x: x[1]
-                )
+                retainer_client_success_exec = st.selectbox("Client Success Executive", exec_options, format_func=lambda x: x[1])
             else:
                 retainer_client_success_exec = st.text_input("Client Success Executive")
+        
         # Guidelines
         with st.expander("Guidelines", expanded=False):
             guidelines_options = get_guidelines_odoo(models, uid)
@@ -2664,17 +2588,7 @@ def designer_selection_page():
                 st.session_state.pop(key, None)
             st.rerun()
 
-def set_default_client_success_exec(client_success_exec_options):
-    """Set the default client success executive to the current user"""
-    if "user" in st.session_state and st.session_state.user.get("odoo_user_id"):
-        odoo_user_id = st.session_state.user.get("odoo_user_id")
-        
-        # Find the index in the options list
-        for i, option in enumerate(client_success_exec_options):
-            if option[0] == odoo_user_id:
-                return i
-    
-    return 0  # Default to first option if not found
+
 
 # -------------------------------
 # MAIN
@@ -2713,71 +2627,13 @@ def validate_session():
     
     return True
 
-def check_streamlit_auth():
-    """Check Streamlit authentication and initialize user session"""
-    # Check if Streamlit auth is available
-    try:
-        # Try to access email - this will fail if auth is not enabled
-        email = st.experimental_user.email
-        
-        # If we get here, Streamlit auth is working
-        if email:
-            # Initialize user with Streamlit email
-            if "user" not in st.session_state or st.session_state.user.get("email") != email:
-                st.session_state.user = {
-                    "username": email,
-                    "email": email,
-                    "logged_in": True
-                }
-                
-                # Try to map to Odoo user if we have a connection
-                if "odoo_uid" in st.session_state and "odoo_models" in st.session_state:
-                    odoo_user = map_streamlit_to_odoo_user(
-                        email, 
-                        st.session_state.odoo_models, 
-                        st.session_state.odoo_uid
-                    )
-                    
-                    if odoo_user:
-                        st.session_state.user["odoo_user_id"] = odoo_user['id']
-                        st.session_state.user["full_name"] = odoo_user['name']
-                
-                # Try to load Google tokens
-                try:
-                    google_tokens = SessionManager.load_google_tokens(email)
-                    if google_tokens:
-                        # Restore Google credentials
-                        st.session_state.google_gmail_creds = google_tokens.get("gmail_creds")
-                        st.session_state.google_drive_creds = google_tokens.get("drive_creds")
-                        st.session_state.gmail_auth_complete = bool(google_tokens.get("gmail_creds"))
-                        st.session_state.drive_auth_complete = bool(google_tokens.get("drive_creds"))
-                        st.session_state.google_auth_complete = (
-                            st.session_state.gmail_auth_complete and st.session_state.drive_auth_complete
-                        )
-                        logger.info(f"Restored Google credentials for {email}")
-                except Exception as e:
-                    logger.error(f"Error loading Google tokens: {e}")
-            
-            return True
-        else:
-            # Email is empty but auth is available
-            st.error("Please log in to access this application")
-            st.stop()
-            return False
-            
-    except (AttributeError, KeyError):
-        # Streamlit auth is not enabled - fall back to standard login
-        logger.info("Streamlit authentication not available - using standard login")
-        # Don't modify anything - let the standard login flow work
-        return True  # Continue with regular authentication flow
-
 def main():
     from session_manager import SessionManager
     
     # Initialize session
     SessionManager.initialize_session()
 
-    # First, handle OAuth callbacks regardless of auth state
+    # CRITICAL FIX: Add special OAuth callback detection
     if "code" in st.query_params:
         # This indicates we're coming back from Google OAuth
         auth_code = st.query_params["code"]
@@ -2797,20 +2653,8 @@ def main():
             st.query_params.clear()
             st.rerun()
 
-    # Check authentication, but don't stop if streamlit auth isn't available
-    check_streamlit_auth()
-
-    # The rest of your authentication flow remains the same
-    # If streamlit auth is not available, this path will still work
-    if "logged_in" not in st.session_state or not st.session_state.logged_in:
-        login_page()
-        return
-
-    # Validate session for all pages except login
-    if not validate_session():
-        login_page()
-        return
     
+
     # Handle debug mode
     if inject_debug_page():
         return
