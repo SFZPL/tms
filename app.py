@@ -2715,54 +2715,61 @@ def validate_session():
 
 def check_streamlit_auth():
     """Check Streamlit authentication and initialize user session"""
-    # Check if user is authenticated
-    if not st.experimental_user.email:
-        st.error("Please log in to access this application")
-        st.stop()
+    # Check if Streamlit auth is available
+    try:
+        # Try to access email - this will fail if auth is not enabled
+        email = st.experimental_user.email
         
-    email = st.experimental_user.email
-    
-    # Check if we need to load user data
-    if "user" not in st.session_state or st.session_state.user.get("email") != email:
-        # Initialize user
-        st.session_state.user = {
-            "username": email,
-            "email": email,
-            "logged_in": True
-        }
-        
-        # Find odoo_user_id in the database
-        user_data = SessionManager.get_user_by_email(email)
-        if user_data:
-            st.session_state.user["odoo_user_id"] = user_data[1]  # odoo_user_id is second column
-        
-        # Try to load Google tokens
-        google_tokens = SessionManager.load_google_tokens(email)
-        if google_tokens:
-            # Restore Google credentials
-            st.session_state.google_gmail_creds = google_tokens.get("gmail_creds")
-            st.session_state.google_drive_creds = google_tokens.get("drive_creds")
-            st.session_state.gmail_auth_complete = bool(google_tokens.get("gmail_creds"))
-            st.session_state.drive_auth_complete = bool(google_tokens.get("drive_creds"))
-            st.session_state.google_auth_complete = (
-                st.session_state.gmail_auth_complete and st.session_state.drive_auth_complete
-            )
+        # If we get here, Streamlit auth is working
+        if email:
+            # Initialize user with Streamlit email
+            if "user" not in st.session_state or st.session_state.user.get("email") != email:
+                st.session_state.user = {
+                    "username": email,
+                    "email": email,
+                    "logged_in": True
+                }
+                
+                # Try to map to Odoo user if we have a connection
+                if "odoo_uid" in st.session_state and "odoo_models" in st.session_state:
+                    odoo_user = map_streamlit_to_odoo_user(
+                        email, 
+                        st.session_state.odoo_models, 
+                        st.session_state.odoo_uid
+                    )
+                    
+                    if odoo_user:
+                        st.session_state.user["odoo_user_id"] = odoo_user['id']
+                        st.session_state.user["full_name"] = odoo_user['name']
+                
+                # Try to load Google tokens
+                try:
+                    google_tokens = SessionManager.load_google_tokens(email)
+                    if google_tokens:
+                        # Restore Google credentials
+                        st.session_state.google_gmail_creds = google_tokens.get("gmail_creds")
+                        st.session_state.google_drive_creds = google_tokens.get("drive_creds")
+                        st.session_state.gmail_auth_complete = bool(google_tokens.get("gmail_creds"))
+                        st.session_state.drive_auth_complete = bool(google_tokens.get("drive_creds"))
+                        st.session_state.google_auth_complete = (
+                            st.session_state.gmail_auth_complete and st.session_state.drive_auth_complete
+                        )
+                        logger.info(f"Restored Google credentials for {email}")
+                except Exception as e:
+                    logger.error(f"Error loading Google tokens: {e}")
             
-            logger.info(f"Restored Google credentials for {email}")
-
-    # If we don't have an Odoo user ID, try to find one
-    if "odoo_user_id" not in st.session_state.user and "odoo_uid" in st.session_state:
-        odoo_user = map_streamlit_to_odoo_user(
-            email, 
-            st.session_state.odoo_models, 
-            st.session_state.odoo_uid
-        )
-        
-        if odoo_user:
-            st.session_state.user["odoo_user_id"] = odoo_user['id']
-            st.session_state.user["full_name"] = odoo_user['name']    
-    
-    return True
+            return True
+        else:
+            # Email is empty but auth is available
+            st.error("Please log in to access this application")
+            st.stop()
+            return False
+            
+    except (AttributeError, KeyError):
+        # Streamlit auth is not enabled - fall back to standard login
+        logger.info("Streamlit authentication not available - using standard login")
+        # Don't modify anything - let the standard login flow work
+        return True  # Continue with regular authentication flow
 
 def main():
     from session_manager import SessionManager
@@ -2770,11 +2777,7 @@ def main():
     # Initialize session
     SessionManager.initialize_session()
 
-    # Check Streamlit authentication
-    if not check_streamlit_auth():
-        return
-
-    # CRITICAL FIX: Add special OAuth callback detection
+    # First, handle OAuth callbacks regardless of auth state
     if "code" in st.query_params:
         # This indicates we're coming back from Google OAuth
         auth_code = st.query_params["code"]
@@ -2794,8 +2797,20 @@ def main():
             st.query_params.clear()
             st.rerun()
 
-    
+    # Check authentication, but don't stop if streamlit auth isn't available
+    check_streamlit_auth()
 
+    # The rest of your authentication flow remains the same
+    # If streamlit auth is not available, this path will still work
+    if "logged_in" not in st.session_state or not st.session_state.logged_in:
+        login_page()
+        return
+
+    # Validate session for all pages except login
+    if not validate_session():
+        login_page()
+        return
+    
     # Handle debug mode
     if inject_debug_page():
         return
