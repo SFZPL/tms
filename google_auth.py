@@ -1,14 +1,14 @@
 import os
 import json
 import logging
-import pickle
-import base64
-
+import tempfile
 import streamlit as st
+import time
+from datetime import datetime
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
-from config import get_google_credentials, supabase
+from config import get_secret, get_google_credentials
 
 # Configure logging
 debug_logger = logging.getLogger(__name__)
@@ -156,47 +156,70 @@ def get_google_service(service_name: str):
         st.error(f"Authentication error: {e}")
         return None
 
-def handle_oauth_callback(auth_code):
-    """
-    Process the OAuth callback code
-    
-    Args:
-        auth_code: The authorization code from the callback
-        
-    Returns:
-        True if successful, False otherwise
-    """
+def handle_oauth_callback(code):
+    """Process Google OAuth callback code"""
     try:
-        debug_logger.info(f"Processing OAuth callback code")
-        client_config = get_google_credentials()
+        logger.info(f"Processing OAuth code: {code[:10]}..." if len(code) > 10 else code)
         
-        if not client_config:
-            debug_logger.error("Missing Google client configuration")
-            return False
+        # Load client config
+        client_config_str = st.secrets["gcp"]["client_config"]
+        client_config = json.loads(client_config_str)
+        
+        # Create a temporary file for credentials
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.json', mode='w') as temp:
+            json.dump(client_config, temp)
+            temp_path = temp.name
+        
+        try:
+            # Use the same URI that was used to initiate the flow
+            redirect_uri = "https://prezlab-tms.streamlit.app/"
             
-        # Create flow with the same parameters as the original request
-        flow = InstalledAppFlow.from_client_config(
-            client_config,
-            scopes=SCOPES,
-            redirect_uri=get_redirect_uri()
-        )
-        
-        # Exchange code for credentials
-        flow.fetch_token(code=auth_code)
-        creds = flow.credentials
-        
-        # Store credentials for both services
-        # Default to using same credentials for both services
-        username = st.session_state.get('user', {}).get('username', 'default_user')
-        _save_creds(username, 'gmail', creds)
-        _save_creds(username, 'drive', creds)
-        
-        # Update session state
-        st.session_state['google_gmail_creds'] = creds
-        st.session_state['google_drive_creds'] = creds
-        
-        debug_logger.info("OAuth callback processed successfully")
-        return True
+            flow = InstalledAppFlow.from_client_secrets_file(
+                temp_path, 
+                SCOPES,
+                redirect_uri=redirect_uri
+            )
+            
+            # Exchange code for tokens
+            flow.fetch_token(code=code)
+            creds = flow.credentials
+            
+            # Store credentials in session state for both services
+            st.session_state["google_gmail_creds"] = creds
+            st.session_state["google_drive_creds"] = creds
+            
+            # Set all auth flags
+            st.session_state["gmail_auth_complete"] = True
+            st.session_state["drive_auth_complete"] = True
+            st.session_state["google_auth_complete"] = True
+            
+            # ADDED: Save credentials for the current user if logged in
+            try:
+                from session_manager import SessionManager
+                if "logged_in" in st.session_state and st.session_state.get("user"):
+                    username = st.session_state.user.get("username")
+                    if username:
+                        # Create a special session state key for this user's credentials
+                        cred_key = f"persistent_{username}_google_creds"
+                        
+                        # Store current credentials
+                        st.session_state[cred_key] = {
+                            "gmail_creds": st.session_state.get("google_gmail_creds"),
+                            "drive_creds": st.session_state.get("google_drive_creds"),
+                            "gmail_auth_complete": True,
+                            "drive_auth_complete": True,
+                            "google_auth_complete": True,
+                            "timestamp": datetime.now().isoformat() if 'datetime' in globals() else str(time.time())
+                        }
+                        logger.info(f"Stored Google credentials for user {username} after OAuth")
+            except Exception as save_error:
+                logger.error(f"Error storing credentials: {save_error}")
+            
+            logger.info("Google authentication successful for all services")
+            return True
+        finally:
+            # Clean up temporary file
+            os.unlink(temp_path)
     except Exception as e:
-        debug_logger.error(f"Error processing OAuth callback: {e}")
+        logger.error(f"Error handling OAuth callback: {e}", exc_info=True)
         return False

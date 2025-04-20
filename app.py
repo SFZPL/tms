@@ -9,6 +9,8 @@ import logging
 from typing import Dict, List, Tuple, Optional, Any, Union
 from google_drive import create_folder, get_folder_link, get_folder_url
 from config import get_secret
+from google_drive import get_drive_service  # Add this import
+from gmail_integration import get_gmail_service  # You'll need this too
 # In app.py, add a try/except block around the debug_utils import
 try:
     from debug_utils import inject_debug_page, debug_function, SystemDebugger
@@ -2178,10 +2180,18 @@ def email_analysis_page():
         if st.button("Continue to Parent Task Details", type="primary"):
             st.rerun()
 
+# In app.py - Update the google_auth_page() function
+
 def google_auth_page():
+    """
+    Page for Google authentication with support for persistent credentials
+    """
     st.title("Google Services Authentication")
     
-    # Check for both credential presence and backup flags
+    # Get current username
+    username = st.session_state.get("user", {}).get("username", "Unknown")
+    
+    # Check authentication status
     gmail_authenticated = "google_gmail_creds" in st.session_state
     drive_authenticated = "google_drive_creds" in st.session_state
     
@@ -2196,6 +2206,11 @@ def google_auth_page():
         st.write("Drive Creds:", drive_authenticated)
         st.write("Gmail Auth Complete Flag:", gmail_auth_complete)
         st.write("Drive Auth Complete Flag:", drive_auth_complete)
+        st.write("Current User:", username)
+        
+        # Show persistent credentials keys
+        persistent_keys = [k for k in st.session_state.keys() if k.startswith("persistent_")]
+        st.write("Persistent Credential Keys:", persistent_keys)
         
         # Add a reset button
         if st.button("Reset Google Auth Status (Debug)"):
@@ -2211,6 +2226,34 @@ def google_auth_page():
                     st.session_state.pop(key, None)
             st.rerun()
     
+    # If already authenticated, show success message
+    if (gmail_authenticated or gmail_auth_complete) and (drive_authenticated or drive_auth_complete):
+        st.success(f"🎉 Google services are already authenticated for user: {username}")
+        st.info("👉 Your Google authentication is saved and will be available whenever you log in.")
+        
+        # Add a button to manually save credentials for extra safety
+        if st.button("Save Authentication Status", key="save_auth_status"):
+            # Create a special session state key for this user's credentials
+            cred_key = f"persistent_{username}_google_creds"
+            
+            # Store current credentials
+            st.session_state[cred_key] = {
+                "gmail_creds": st.session_state.get("google_gmail_creds"),
+                "drive_creds": st.session_state.get("google_drive_creds"),
+                "gmail_auth_complete": gmail_auth_complete,
+                "drive_auth_complete": drive_auth_complete,
+                "google_auth_complete": True,
+                "timestamp": datetime.now().isoformat()
+            }
+            st.success("✅ Authentication status saved to your user profile!")
+        
+        # Continue button
+        if st.button("Continue to Dashboard", type="primary"):
+            st.session_state.google_auth_complete = True
+            st.rerun()
+        return
+    
+    # Normal authentication process for services not yet authenticated
     st.info("Please authenticate with Google to enable Gmail and Drive functionality.")
     
     col1, col2 = st.columns(2)
@@ -2227,6 +2270,17 @@ def google_auth_page():
                     if gmail_service:
                         # Set both the credential and backup flags
                         st.session_state.gmail_auth_complete = True
+                        # Save credentials right away
+                        if username:
+                            cred_key = f"persistent_{username}_google_creds"
+                            st.session_state[cred_key] = {
+                                "gmail_creds": st.session_state.get("google_gmail_creds"),
+                                "drive_creds": st.session_state.get("google_drive_creds"),
+                                "gmail_auth_complete": True,
+                                "drive_auth_complete": st.session_state.get("drive_auth_complete", False),
+                                "google_auth_complete": False,  # Not complete until both are done
+                                "timestamp": datetime.now().isoformat()
+                            }
                         st.success("Gmail authentication successful!")
                         st.rerun()
     
@@ -2242,6 +2296,18 @@ def google_auth_page():
                     if drive_service:
                         # Set both the credential and backup flags
                         st.session_state.drive_auth_complete = True
+                        # Save credentials right away
+                        if username:
+                            cred_key = f"persistent_{username}_google_creds"
+                            existing_creds = st.session_state.get(cred_key, {})
+                            st.session_state[cred_key] = {
+                                "gmail_creds": st.session_state.get("google_gmail_creds", existing_creds.get("gmail_creds")),
+                                "drive_creds": st.session_state.get("google_drive_creds"),
+                                "gmail_auth_complete": st.session_state.get("gmail_auth_complete", existing_creds.get("gmail_auth_complete", False)),
+                                "drive_auth_complete": True,
+                                "google_auth_complete": False,  # Not complete until both are done
+                                "timestamp": datetime.now().isoformat()
+                            }
                         st.success("Drive authentication successful!")
                         st.rerun()
     
@@ -2251,6 +2317,18 @@ def google_auth_page():
         
         # Set the main flag that the main() function checks
         st.session_state.google_auth_complete = True
+        
+        # Save credentials again for good measure
+        if username:
+            cred_key = f"persistent_{username}_google_creds"
+            st.session_state[cred_key] = {
+                "gmail_creds": st.session_state.get("google_gmail_creds"),
+                "drive_creds": st.session_state.get("google_drive_creds"),
+                "gmail_auth_complete": True,
+                "drive_auth_complete": True,
+                "google_auth_complete": True,
+                "timestamp": datetime.now().isoformat()
+            }
         
         if st.button("Continue to Dashboard", type="primary"):
             # Ensure the flag is set before continuing
@@ -2623,11 +2701,28 @@ def main():
             st.session_state.gmail_auth_complete = True
             st.session_state.drive_auth_complete = True
             
+            # Save credentials for current user
+            try:
+                username = st.session_state.get("user", {}).get("username")
+                if username:
+                    # Create a special session state key for this user's credentials
+                    cred_key = f"persistent_{username}_google_creds"
+                    
+                    # Store current credentials
+                    st.session_state[cred_key] = {
+                        "gmail_creds": st.session_state.get("google_gmail_creds"),
+                        "drive_creds": st.session_state.get("google_drive_creds"),
+                        "gmail_auth_complete": True,
+                        "drive_auth_complete": True,
+                        "google_auth_complete": True,
+                        "timestamp": datetime.now().isoformat() if 'datetime' in globals() else str(time.time())
+                    }
+            except Exception as e:
+                logger.error(f"Error saving credentials after OAuth callback: {e}")
+            
             # Redirect to clear the URL parameters
             st.query_params.clear()
             st.rerun()
-
-    
 
     # Handle debug mode
     if inject_debug_page():
@@ -2635,12 +2730,6 @@ def main():
     
     # Render sidebar
     render_sidebar()
-
-    st.sidebar.write("Debug Info:")
-    st.sidebar.write(f"Logged in: {st.session_state.get('logged_in', False)}")
-    st.sidebar.write(f"Google Auth Complete: {st.session_state.get('google_auth_complete', False)}")
-    st.sidebar.write(f"Google Gmail Creds: {'google_gmail_creds' in st.session_state}")
-    st.sidebar.write(f"Google Drive Creds: {'google_drive_creds' in st.session_state}")
 
     # Add this section to show the Google Auth page on demand
     if st.session_state.get("show_google_auth", False):
@@ -2670,10 +2759,45 @@ def main():
     # Main content
     if "logged_in" not in st.session_state or not st.session_state.logged_in:
         login_page()
-    # Add Google auth step after login but before main workflow
-    # elif "google_auth_complete" not in st.session_state or st.session_state.google_auth_complete == False:
-    #     google_auth_page()
-    elif "form_type" not in st.session_state:
+    # Check if user is already authenticated with Google
+    elif not st.session_state.get("google_auth_complete", False):
+        # Check if we have stored credentials for this user
+        username = st.session_state.get("user", {}).get("username")
+        if username:
+            cred_key = f"persistent_{username}_google_creds"
+            if cred_key in st.session_state:
+                # Restore credentials from saved state
+                google_creds = st.session_state[cred_key]
+                if google_creds:
+                    st.session_state.google_gmail_creds = google_creds.get("gmail_creds")
+                    st.session_state.google_drive_creds = google_creds.get("drive_creds")
+                    st.session_state.gmail_auth_complete = google_creds.get("gmail_auth_complete", False)
+                    st.session_state.drive_auth_complete = google_creds.get("drive_auth_complete", False)
+                    st.session_state.google_auth_complete = google_creds.get("google_auth_complete", False)
+                    
+                    # Check if we have restored valid credentials
+                    if st.session_state.get("google_gmail_creds") and st.session_state.get("google_drive_creds"):
+                        # We've restored credentials, continue with app flow
+                        pass
+                    else:
+                        # Credentials were restored but might be invalid, show auth page
+                        google_auth_page()
+                        return
+                else:
+                    # No valid credentials saved, show auth page
+                    google_auth_page()
+                    return
+            else:
+                # No saved credentials for this user, show auth page
+                google_auth_page()
+                return
+        else:
+            # No username available, show auth page
+            google_auth_page()
+            return
+    
+    # If we reach here, user is logged in and authenticated (or authentication flow completed)
+    if "form_type" not in st.session_state:
         type_selection_page()
     else:
         # Designer selection page is shown after tasks are created
@@ -2701,6 +2825,5 @@ def main():
                 designer_selection_page()  # Make sure this is checked BEFORE calling retainer_subtask_page
             else:
                 retainer_subtask_page()
-
 if __name__ == "__main__":
     main()
