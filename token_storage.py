@@ -1,10 +1,10 @@
-# token_storage.py (new file)
+# token_storage.py
 import json
 import logging
 import streamlit as st
-from supabase import create_client
-from config import get_secret
 from cryptography.fernet import Fernet
+import base64
+import os
 
 # Configure logging
 logging.basicConfig(
@@ -14,14 +14,51 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Function to get a secret from Streamlit secrets
+def get_secret(key, default=None):
+    """Simple version that doesn't import config.py"""
+    if key in st.secrets:
+        return st.secrets[key]
+    # Handle nested keys like "google.drive_parent_folder_id"
+    parts = key.split('.')
+    if len(parts) > 1:
+        current = st.secrets
+        for part in parts:
+            if part in current:
+                current = current[part]
+            else:
+                return default
+        return current
+    return default
+
 # Initialize Supabase client
 def get_supabase_client():
-    url = get_secret("supabase.url")
-    key = get_secret("supabase.key")
-    return create_client(url, key)
+    try:
+        from supabase import create_client
+        url = get_secret("supabase.url")
+        key = get_secret("supabase.key")
+        return create_client(url, key)
+    except Exception as e:
+        logger.error(f"Error initializing Supabase client: {e}")
+        return None
 
-# Encryption key (should be stored securely)
-ENCRYPTION_KEY = get_secret("ENCRYPTION_KEY", "lzNiipUzCgW4sESOHWaBmE5w8ACMb7DBIP3U0wpzCuQ=").encode()
+# Get encryption key from secrets or generate a valid one
+def get_encryption_key():
+    key = get_secret("ENCRYPTION_KEY", None)
+    if key:
+        # Use the key from secrets
+        return key.encode()
+    else:
+        # Generate a valid key if not provided
+        try:
+            return base64.urlsafe_b64encode(os.urandom(32))
+        except Exception as e:
+            logger.error(f"Error generating encryption key: {e}")
+            # Provide a valid fallback key (NOT FOR PRODUCTION)
+            return b'lzNiipUzCgW4sESOHWaBmE5w8ACMb7DBIP3U0wpzCuQ='
+
+# Initialize Fernet with a valid key
+ENCRYPTION_KEY = get_encryption_key()
 cipher_suite = Fernet(ENCRYPTION_KEY)
 
 def encrypt_token(token_data):
@@ -47,15 +84,18 @@ def save_user_token(username, service, token_data):
     """Save a user's OAuth token to Supabase"""
     try:
         supabase = get_supabase_client()
-        
-        # Check if token already exists
-        response = supabase.table("oauth_tokens").select("*").eq("username", username).eq("service", service).execute()
-        
+        if not supabase:
+            logger.error("Failed to initialize Supabase client")
+            return False
+            
         encrypted_token = encrypt_token(token_data)
         if not encrypted_token:
             logger.error("Failed to encrypt token data")
             return False
             
+        # Check if token already exists
+        response = supabase.table("oauth_tokens").select("*").eq("username", username).eq("service", service).execute()
+        
         if response.data:
             # Update existing record
             supabase.table("oauth_tokens").update({"token": encrypted_token}).eq("username", username).eq("service", service).execute()
@@ -77,6 +117,10 @@ def get_user_token(username, service):
     """Retrieve a user's OAuth token from Supabase"""
     try:
         supabase = get_supabase_client()
+        if not supabase:
+            logger.error("Failed to initialize Supabase client")
+            return None
+            
         response = supabase.table("oauth_tokens").select("token").eq("username", username).eq("service", service).execute()
         
         if response.data:
@@ -86,14 +130,3 @@ def get_user_token(username, service):
     except Exception as e:
         logger.error(f"Error retrieving token from Supabase: {e}")
         return None
-
-def delete_user_token(username, service):
-    """Delete a user's OAuth token from Supabase"""
-    try:
-        supabase = get_supabase_client()
-        supabase.table("oauth_tokens").delete().eq("username", username).eq("service", service).execute()
-        logger.info(f"Deleted {service} token for user {username}")
-        return True
-    except Exception as e:
-        logger.error(f"Error deleting token from Supabase: {e}")
-        return False

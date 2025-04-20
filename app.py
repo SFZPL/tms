@@ -7,8 +7,8 @@ import uuid
 from pathlib import Path
 import logging
 from typing import Dict, List, Tuple, Optional, Any, Union
-from google_drive import create_folder, get_folder_link, get_folder_url
 from config import get_secret
+
 # In app.py, add a try/except block around the debug_utils import
 try:
     from debug_utils import inject_debug_page, debug_function, SystemDebugger
@@ -21,7 +21,12 @@ except ImportError:
     class SystemDebugger:
         def __init__(self): pass
         def streamlit_debug_page(self): pass
-import google_auth
+
+# Import these modules later in functions where they're needed, not at the top level
+# from google_drive import create_folder, get_folder_link, get_folder_url
+# import google_auth
+# from google_auth import handle_oauth_callback
+
 from datetime import datetime
 
 
@@ -835,7 +840,10 @@ def adhoc_subtask_page():
 # -------------------------------
 def finalize_adhoc_subtasks():
     from session_manager import SessionManager
-    SessionManager.update_activity()  # Add this line
+    SessionManager.update_activity()
+    
+    # Import modules only when needed
+    from google_drive import create_folder_structure
     uid = st.session_state.odoo_uid
     models = st.session_state.odoo_models
 
