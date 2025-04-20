@@ -7,13 +7,6 @@ from typing import Optional, Dict, Any
 # config.py
 from supabase import create_client
 
-# after your get_secret definitions:
-SUPABASE_URL = get_secret("supabase.url")
-SUPABASE_KEY = get_secret("supabase.key")
-
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-
-
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -53,6 +46,12 @@ def get_secret(key: str, default: Any = None) -> Any:
         
     # Fall back to environment variables
     return os.getenv(key, default)
+
+# after your get_secret definitions:
+SUPABASE_URL = get_secret("supabase.url")
+SUPABASE_KEY = get_secret("supabase.key")
+
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 def get_google_credentials():
     """Get Google API credentials as a dictionary."""
