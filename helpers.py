@@ -5,8 +5,10 @@ import pandas as pd
 from datetime import datetime
 import logging
 from typing import Dict, List, Tuple, Optional, Any, Union
-from dotenv import load_dotenv
 from config import get_secret
+from dotenv import load_dotenv
+# explicitly load the .env (or your secrets.toml) from a known location:
+load_dotenv(dotenv_path="/mnt/data/.env")
 
 # Configure logging
 logging.basicConfig(
@@ -16,8 +18,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Load environment variables
-load_dotenv()
+
 
 # Replace environment variables with secrets
 ODOO_URL = get_secret("ODOO_URL")

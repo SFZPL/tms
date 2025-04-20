@@ -1,6 +1,9 @@
+import sys, os
+# if Streamlit shows your working dir as /mount/src/tms but your code lives in /mnt/data
+sys.path.append("/mnt/data")
+
 import streamlit as st
 import re
-import os
 import pandas as pd
 from datetime import datetime, date, time
 import uuid
