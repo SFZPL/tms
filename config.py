@@ -6,7 +6,6 @@ from typing import Optional, Dict, Any
 
 # config.py
 from supabase import create_client
-from config import get_secret
 
 # after your get_secret definitions:
 SUPABASE_URL = get_secret("supabase.url")
