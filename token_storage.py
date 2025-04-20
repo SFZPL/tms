@@ -21,7 +21,7 @@ def get_supabase_client():
     return create_client(url, key)
 
 # Encryption key (should be stored securely)
-ENCRYPTION_KEY = get_secret("ENCRYPTION_KEY", "YOUR_DEFAULT_ENCRYPTION_KEY_HERE").encode()
+ENCRYPTION_KEY = get_secret("ENCRYPTION_KEY", "lzNiipUzCgW4sESOHWaBmE5w8ACMb7DBIP3U0wpzCuQ=").encode()
 cipher_suite = Fernet(ENCRYPTION_KEY)
 
 def encrypt_token(token_data):
