@@ -22,6 +22,7 @@ except ImportError:
         def __init__(self): pass
         def streamlit_debug_page(self): pass
 import google_auth
+from google_auth import handle_oauth_callback
 from datetime import datetime
 
 
@@ -2606,26 +2607,38 @@ def main():
     # Initialize session
     SessionManager.initialize_session()
 
-    # CRITICAL FIX: Add special OAuth callback detection
-    if "code" in st.query_params:
-        # This indicates we're coming back from Google OAuth
-        auth_code = st.query_params["code"]
-        st.success("Authentication code received! Processing...")
-        
-        # Process the code
-        from google_auth import handle_oauth_callback
-        success = handle_oauth_callback(auth_code)
-        
-        if success:
-            # Authentication was successful
-            st.session_state.google_auth_complete = True
-            st.session_state.gmail_auth_complete = True
-            st.session_state.drive_auth_complete = True
-            
-            # Redirect to clear the URL parameters
-            st.query_params.clear()
-            st.rerun()
+    # Add to the top of app.py - OAuth callback handler
 
+    # Check if returning from OAuth flow
+    if "code" in st.query_params and "state" in st.query_params:
+        code = st.query_params["code"]
+        state = st.query_params["state"]
+        
+        # Verify state to prevent CSRF
+        if "oauth_state" in st.session_state and st.session_state["oauth_state"] == state:
+            # Process the OAuth code
+            success = handle_oauth_callback(code)
+            if success:
+                # Clear query parameters to prevent reprocessing
+                st.query_params.clear()
+                
+                # Set authentication flags
+                st.session_state["google_auth_complete"] = True
+                st.session_state["gmail_auth_complete"] = True
+                st.session_state["drive_auth_complete"] = True
+                
+                # Show success message
+                st.success("Authentication successful!")
+                
+                # Add a small delay to ensure session state updates
+                import time
+                time.sleep(0.5)
+                
+                # Force a rerun to clear the URL
+                st.rerun()
+        else:
+            st.error("Invalid authentication state. Please try again.")
+            st.query_params.clear()
     
 
     # Handle debug mode
