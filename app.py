@@ -7,8 +7,8 @@ import uuid
 from pathlib import Path
 import logging
 from typing import Dict, List, Tuple, Optional, Any, Union
-from google_drive import create_folder, get_folder_link, get_folder_url
 from config import get_secret
+
 # In app.py, add a try/except block around the debug_utils import
 try:
     from debug_utils import inject_debug_page, debug_function, SystemDebugger
@@ -21,8 +21,12 @@ except ImportError:
     class SystemDebugger:
         def __init__(self): pass
         def streamlit_debug_page(self): pass
-import google_auth
-from google_auth import handle_oauth_callback
+
+# Import these modules later in functions where they're needed, not at the top level
+# from google_drive import create_folder, get_folder_link, get_folder_url
+# import google_auth
+# from google_auth import handle_oauth_callback
+
 from datetime import datetime
 
 
@@ -2617,6 +2621,8 @@ def main():
         # Verify state to prevent CSRF
         if "oauth_state" in st.session_state and st.session_state["oauth_state"] == state:
             # Process the OAuth code
+            # Lazy import to avoid circular dependencies
+            from google_auth import handle_oauth_callback
             success = handle_oauth_callback(code)
             if success:
                 # Clear query parameters to prevent reprocessing
