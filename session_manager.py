@@ -2,9 +2,6 @@ import streamlit as st
 from datetime import datetime, timedelta
 import uuid
 import logging
-import sqlite3
-import pickle
-import base64
 from typing import Dict, Any, Optional
 
 # Configure logging
@@ -102,16 +99,16 @@ class SessionManager:
             "session_id": str(uuid.uuid4())
         }
         
-        # IMPORTANT: Restore Google credentials if previously saved
-        if "_persistent_google_creds" in st.session_state:
-            saved_creds = st.session_state._persistent_google_creds
-            if saved_creds:
-                # Restore all Google credentials
-                st.session_state.google_gmail_creds = saved_creds.get("gmail_creds")
-                st.session_state.google_drive_creds = saved_creds.get("drive_creds") 
-                st.session_state.gmail_auth_complete = saved_creds.get("gmail_auth_complete", False)
-                st.session_state.drive_auth_complete = saved_creds.get("drive_auth_complete", False)
-                st.session_state.google_auth_complete = saved_creds.get("google_auth_complete", False)
+        # Load Google credentials for this user
+        from config import load_user_google_creds
+        user_creds = load_user_google_creds(username)
+        if user_creds:
+            st.session_state.google_gmail_creds = user_creds.get("gmail_creds")
+            st.session_state.google_drive_creds = user_creds.get("drive_creds")
+            st.session_state.gmail_auth_complete = True
+            st.session_state.drive_auth_complete = True
+            st.session_state.google_auth_complete = user_creds.get("google_auth_complete", False)
+            logger.info(f"Loaded existing Google credentials for user {username}")
         
         logger.info(f"User {username} logged in. Session expires at {session_expiry}")
     
@@ -124,37 +121,29 @@ class SessionManager:
             expired: Whether logout is due to session expiry
         """
         # Log the logout
+        username = None
         if st.session_state.get("logged_in") and st.session_state.get("user"):
             username = st.session_state.user.get("username", "Unknown")
             logger.info(f"User {username} logged out. Expired: {expired}")
         
-        # IMPORTANT: Save Google credentials before clearing session
-        google_creds = {
-            "gmail_creds": st.session_state.get("google_gmail_creds"),
-            "drive_creds": st.session_state.get("google_drive_creds"),
-            "gmail_auth_complete": st.session_state.get("gmail_auth_complete", False),
-            "drive_auth_complete": st.session_state.get("drive_auth_complete", False),
-            "google_auth_complete": st.session_state.get("google_auth_complete", False)
-        }
-        
-        # Persist credentials in Streamlit's browser-based storage
-        if google_creds["gmail_creds"]:
-            st.session_state["_persistent_google_creds"] = google_creds
-        
-        # Clear most state but keep debug and persistence
-        debug_mode = st.session_state.get("debug_mode")
-        persistent_creds = st.session_state.get("_persistent_google_creds")
+        # Save Google credentials before clearing session
+        from config import save_user_google_creds
+        if username and st.session_state.get("google_gmail_creds"):
+            google_creds = {
+                "gmail_creds": st.session_state.get("google_gmail_creds"),
+                "drive_creds": st.session_state.get("google_drive_creds"),
+                "google_auth_complete": st.session_state.get("google_auth_complete", False)
+            }
+            save_user_google_creds(username, google_creds)
+            logger.info(f"Saved Google credentials for user {username}")
         
         # Clear state
-        for key in list(st.session_state.keys()):
-            if key not in ["debug_mode", "_persistent_google_creds"]:
-                st.session_state.pop(key, None)
+        debug_mode = st.session_state.get("debug_mode")
+        st.session_state.clear()
         
-        # Restore persistent values
+        # Restore debug mode if needed
         if debug_mode:
             st.session_state.debug_mode = debug_mode
-        if persistent_creds:
-            st.session_state._persistent_google_creds = persistent_creds
         
         # Re-initialize session
         SessionManager.initialize_session()
@@ -290,121 +279,3 @@ class SessionManager:
             return False
         
         return True
-    
-    @staticmethod
-    def get_user_by_email(email):
-        """Get user data from database by email"""
-        conn = sqlite3.connect('user_data.db')
-        c = conn.cursor()
-        c.execute("SELECT email, odoo_user_id, google_tokens FROM users WHERE email = ?", (email,))
-        user_data = c.fetchone()
-        conn.close()
-        return user_data
-
-    @staticmethod
-    def save_google_tokens(email, tokens):
-        """Save encrypted Google tokens to database"""
-        if not email or not tokens:
-            return False
-            
-        # Serialize and encrypt tokens
-        serialized = pickle.dumps(tokens)
-        encrypted = cipher.encrypt(serialized)
-        encoded = base64.b64encode(encrypted).decode()
-        
-        # Save to database
-        conn = sqlite3.connect('user_data.db')
-        c = conn.cursor()
-        c.execute('''
-        INSERT OR REPLACE INTO users (email, google_tokens, last_login) 
-        VALUES (?, ?, datetime('now'))
-        ''', (email, encoded))
-        conn.commit()
-        conn.close()
-        return True
-
-    @staticmethod
-    def load_google_tokens(email):
-        """Load and decrypt Google tokens from database"""
-        conn = sqlite3.connect('user_data.db')
-        c = conn.cursor()
-        c.execute("SELECT google_tokens FROM users WHERE email = ?", (email,))
-        result = c.fetchone()
-        conn.close()
-        
-        if not result or not result[0]:
-            return None
-            
-        try:
-            # Decrypt and deserialize
-            encoded = result[0]
-            encrypted = base64.b64decode(encoded)
-            decrypted = cipher.decrypt(encrypted)
-            tokens = pickle.loads(decrypted)
-            return tokens
-        except Exception as e:
-            logger.error(f"Error decrypting tokens: {e}")
-            return None
-        
-# Add to session_manager.py
-
-@staticmethod
-def get_user_by_email(email):
-    """Get user data from database by email"""
-    conn = sqlite3.connect('user_data.db')
-    c = conn.cursor()
-    c.execute("SELECT email, odoo_user_id, google_tokens FROM users WHERE email = ?", (email,))
-    user_data = c.fetchone()
-    conn.close()
-    return user_data
-
-@staticmethod
-def save_google_tokens(email, tokens):
-    """Save encrypted Google tokens to database"""
-    if not email or not tokens:
-        return False
-        
-    # Import dependencies here to avoid circular imports
-    from app import cipher
-    
-    # Serialize and encrypt tokens
-    serialized = pickle.dumps(tokens)
-    encrypted = cipher.encrypt(serialized)
-    encoded = base64.b64encode(encrypted).decode()
-    
-    # Save to database
-    conn = sqlite3.connect('user_data.db')
-    c = conn.cursor()
-    c.execute('''
-    INSERT OR REPLACE INTO users (email, google_tokens, last_login) 
-    VALUES (?, ?, datetime('now'))
-    ''', (email, encoded))
-    conn.commit()
-    conn.close()
-    return True
-
-@staticmethod
-def load_google_tokens(email):
-    """Load and decrypt Google tokens from database"""
-    # Import dependencies here to avoid circular imports
-    from app import cipher
-    
-    conn = sqlite3.connect('user_data.db')
-    c = conn.cursor()
-    c.execute("SELECT google_tokens FROM users WHERE email = ?", (email,))
-    result = c.fetchone()
-    conn.close()
-    
-    if not result or not result[0]:
-        return None
-        
-    try:
-        # Decrypt and deserialize
-        encoded = result[0]
-        encrypted = base64.b64decode(encoded)
-        decrypted = cipher.decrypt(encrypted)
-        tokens = pickle.loads(decrypted)
-        return tokens
-    except Exception as e:
-        logger.error(f"Error decrypting tokens: {e}")
-        return None

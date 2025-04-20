@@ -248,6 +248,18 @@ def handle_oauth_callback(code):
             st.session_state["drive_auth_complete"] = True
             st.session_state["google_auth_complete"] = True
             
+            # Save credentials for current user
+            if st.session_state.get("logged_in") and st.session_state.get("user"):
+                username = st.session_state.user.get("username")
+                from config import save_user_google_creds
+                google_creds = {
+                    "gmail_creds": creds,
+                    "drive_creds": creds,
+                    "google_auth_complete": True
+                }
+                save_user_google_creds(username, google_creds)
+                logger.info(f"Saved new Google credentials for user {username}")
+            
             logger.info("Google authentication successful for all services")
             return True
         finally:

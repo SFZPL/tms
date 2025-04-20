@@ -24,7 +24,6 @@ except ImportError:
 import google_auth
 from datetime import datetime
 
-
 def add_debug_sidebar(debugger: SystemDebugger):
     """
     Add a debug sidebar option to the existing sidebar
@@ -123,6 +122,41 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+def validate_session():
+    """
+    Validates the current session and handles expiry
+    
+    Returns:
+        True if session is valid, False if expired or not logged in
+    """
+    from session_manager import SessionManager
+    
+    # CRITICAL FIX: Skip validation if OAuth flow is in progress
+    if "code" in st.query_params:
+        return True
+    
+    # Update activity timestamp
+    SessionManager.update_activity()
+    
+    # Check if logged in
+    if not st.session_state.get("logged_in", False):
+        return False
+    
+    # Check for session expiry
+    if not SessionManager.check_session_expiry():
+        return False
+    
+    # Validate Odoo connection
+    if not check_odoo_connection():
+        with st.spinner("Reconnecting to Odoo..."):
+            uid, models = get_odoo_connection(force_refresh=True)
+            if not uid or not models:
+                st.error("Lost connection to Odoo. Please log in again.")
+                SessionManager.logout()
+                return False
+    
+    return True
+
 # -------------------------------
 # SIDEBAR
 # -------------------------------
@@ -193,38 +227,11 @@ def render_sidebar():
                     st.rerun()
         st.markdown("---")
         st.caption("© 2025 Task Management System")
+
+
 # -------------------------------
 # 1) LOGIN PAGE
 # -------------------------------
-def validate_session():
-    """
-    Validates the current session and handles expiry
-    
-    Returns:
-        True if session is valid, False if expired or not logged in
-    """
-    from session_manager import SessionManager
-    # CRITICAL FIX: Skip validation if OAuth flow is in progress
-    if "code" in st.query_params:
-        return True
-        
-    if not st.session_state.get("logged_in", False):
-        return False
-    
-    # Initialize and check expiry
-    if not SessionManager.check_session_expiry():
-        return False
-    
-    # Validate Odoo connection
-    if not check_odoo_connection():
-        with st.spinner("Reconnecting to Odoo..."):
-            uid, models = get_odoo_connection(force_refresh=True)
-            if not uid or not models:
-                st.error("Lost connection to Odoo. Please log in again.")
-                SessionManager.logout()
-                return False
-    
-    return True
 
 def login_page():
     from session_manager import SessionManager
@@ -2593,39 +2600,6 @@ def designer_selection_page():
 # -------------------------------
 # MAIN
 # -------------------------------
-
-def validate_session():
-
-    """
-    Validates the current session and handles expiry
-    
-    Returns:
-        True if session is valid, False if expired or not logged in
-    """
-    from session_manager import SessionManager
-    SessionManager.update_activity()  # Add this line
-
-    if not st.session_state.get("logged_in", False):
-        return False
-        
-    # Check for session expiry
-    if "session_expiry" in st.session_state:
-        if datetime.now() > st.session_state.session_expiry:
-            # Session expired, log out
-            st.warning("Your session has expired. Please log in again.")
-            st.session_state.clear()
-            return False
-    
-    # Validate Odoo connection
-    if not check_odoo_connection():
-        with st.spinner("Reconnecting to Odoo..."):
-            uid, models = get_odoo_connection(force_refresh=True)
-            if not uid or not models:
-                st.error("Lost connection to Odoo. Please log in again.")
-                st.session_state.clear()
-                return False
-    
-    return True
 
 def main():
     from session_manager import SessionManager
