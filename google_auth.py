@@ -54,9 +54,25 @@ def get_google_service(service_name):
     Returns:
         Service object or None if authentication fails
     """
+    import json
+    from google.auth.transport.requests import Request
+    from google.oauth2.credentials import Credentials
+    from googleapiclient.discovery import build
+    from token_storage import get_user_token, save_user_token
+    
     logger.info(f"Getting Google {service_name} service")
     
-    # First, check if we already have valid credentials for the service
+    # First, check if the user is logged in
+    if "user" not in st.session_state or not st.session_state.user:
+        logger.warning("User not logged in, cannot retrieve Google service")
+        return None
+        
+    username = st.session_state.user.get("username")
+    if not username:
+        logger.warning("No username found in session state")
+        return None
+    
+    # Check if we already have valid credentials in session state
     cred_key = f"google_{service_name}_creds"
     if cred_key in st.session_state and st.session_state[cred_key]:
         creds = st.session_state[cred_key]
@@ -67,39 +83,80 @@ def get_google_service(service_name):
                 logger.info(f"Refreshing expired credentials for {service_name}")
                 creds.refresh(Request())
                 st.session_state[cred_key] = creds
+                
+                # Save refreshed token back to Supabase
+                creds_dict = {
+                    'token': creds.token,
+                    'refresh_token': creds.refresh_token,
+                    'token_uri': creds.token_uri,
+                    'client_id': creds.client_id,
+                    'client_secret': creds.client_secret,
+                    'scopes': creds.scopes
+                }
+                save_user_token(username, f"google_{service_name}", creds_dict)
             except Exception as e:
                 logger.error(f"Failed to refresh credentials: {e}")
-                # Don't delete credentials yet, try to use them anyway
+                # Continue to next authentication method
+                creds = None
         
         # Try to build the service with existing credentials
-        try:
-            api_version = 'v3' if service_name == 'drive' else 'v1'
-            service = build(service_name, api_version, credentials=creds)
-            logger.info(f"Successfully built {service_name} service using existing credentials")
-            return service
-        except Exception as e:
-            logger.error(f"Error building {service_name} service with existing credentials: {e}")
-            # Continue to authentication flow
+        if creds:
+            try:
+                api_version = 'v3' if service_name == 'drive' else 'v1'
+                service = build(service_name, api_version, credentials=creds)
+                logger.info(f"Successfully built {service_name} service using session credentials")
+                return service
+            except Exception as e:
+                logger.error(f"Error building {service_name} service with session credentials: {e}")
+                # Continue to next authentication method
     
-    # Check if we should try the other service's credentials
-    other_service = 'drive' if service_name == 'gmail' else 'gmail'
-    other_cred_key = f"google_{other_service}_creds"
+    # Try to get saved token from Supabase
+    saved_token = get_user_token(username, f"google_{service_name}")
     
-    if other_cred_key in st.session_state and st.session_state[other_cred_key]:
-        # Try to use credentials from the other service (they should work for both)
+    if saved_token:
         try:
-            logger.info(f"Trying to use {other_service} credentials for {service_name}")
-            creds = st.session_state[other_cred_key]
-            api_version = 'v3' if service_name == 'drive' else 'v1'
-            service = build(service_name, api_version, credentials=creds)
+            # Create credentials from saved token
+            creds = Credentials(
+                token=saved_token.get('token'),
+                refresh_token=saved_token.get('refresh_token'),
+                token_uri=saved_token.get('token_uri'),
+                client_id=saved_token.get('client_id'),
+                client_secret=saved_token.get('client_secret'),
+                scopes=saved_token.get('scopes')
+            )
             
-            # If successful, store these credentials for this service too
+            # Check if credentials are expired and need refresh
+            if hasattr(creds, 'expired') and creds.expired and hasattr(creds, 'refresh_token'):
+                logger.info(f"Refreshing expired credentials from database for {service_name}")
+                creds.refresh(Request())
+                
+                # Save refreshed token back to Supabase
+                creds_dict = {
+                    'token': creds.token,
+                    'refresh_token': creds.refresh_token,
+                    'token_uri': creds.token_uri,
+                    'client_id': creds.client_id,
+                    'client_secret': creds.client_secret,
+                    'scopes': creds.scopes
+                }
+                save_user_token(username, f"google_{service_name}", creds_dict)
+            
+            # Store in session state for convenience
             st.session_state[cred_key] = creds
-            logger.info(f"Successfully used {other_service} credentials for {service_name}")
+            
+            # Set auth flags
+            st.session_state[f"{service_name}_auth_complete"] = True
+            if "google_gmail_creds" in st.session_state and "google_drive_creds" in st.session_state:
+                st.session_state["google_auth_complete"] = True
+            
+            # Build service
+            api_version = 'v3' if service_name == 'drive' else 'v1'
+            service = build(service_name, api_version, credentials=creds)
+            logger.info(f"Successfully built {service_name} service using saved credentials")
             return service
         except Exception as e:
-            logger.error(f"Error using {other_service} credentials for {service_name}: {e}")
-            # Continue to authentication flow
+            logger.error(f"Error using saved token from database: {e}")
+            # Continue to OAuth flow
     
     # If we reach here, we need to initiate the OAuth flow
     try:
@@ -211,6 +268,7 @@ def process_oauth_callback(code):
         return False
     
 
+# Update handle_oauth_callback in google_auth.py
 def handle_oauth_callback(code):
     """Process Google OAuth callback code"""
     try:
@@ -247,6 +305,22 @@ def handle_oauth_callback(code):
             st.session_state["gmail_auth_complete"] = True
             st.session_state["drive_auth_complete"] = True
             st.session_state["google_auth_complete"] = True
+            
+            # Save tokens to Supabase for persistence
+            from token_storage import save_user_token
+            if "user" in st.session_state and st.session_state.user:
+                username = st.session_state.user.get("username")
+                # Convert credentials to serializable format
+                creds_dict = {
+                    'token': creds.token,
+                    'refresh_token': creds.refresh_token,
+                    'token_uri': creds.token_uri,
+                    'client_id': creds.client_id,
+                    'client_secret': creds.client_secret,
+                    'scopes': creds.scopes
+                }
+                save_user_token(username, "google_gmail", creds_dict)
+                save_user_token(username, "google_drive", creds_dict)
             
             logger.info("Google authentication successful for all services")
             return True
