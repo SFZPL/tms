@@ -155,3 +155,48 @@ def get_google_service(service_name: str):
     except Exception as e:
         st.error(f"Authentication error: {e}")
         return None
+
+def handle_oauth_callback(auth_code):
+    """
+    Process the OAuth callback code
+    
+    Args:
+        auth_code: The authorization code from the callback
+        
+    Returns:
+        True if successful, False otherwise
+    """
+    try:
+        debug_logger.info(f"Processing OAuth callback code")
+        client_config = get_google_credentials()
+        
+        if not client_config:
+            debug_logger.error("Missing Google client configuration")
+            return False
+            
+        # Create flow with the same parameters as the original request
+        flow = InstalledAppFlow.from_client_config(
+            client_config,
+            scopes=SCOPES,
+            redirect_uri=get_redirect_uri()
+        )
+        
+        # Exchange code for credentials
+        flow.fetch_token(code=auth_code)
+        creds = flow.credentials
+        
+        # Store credentials for both services
+        # Default to using same credentials for both services
+        username = st.session_state.get('user', {}).get('username', 'default_user')
+        _save_creds(username, 'gmail', creds)
+        _save_creds(username, 'drive', creds)
+        
+        # Update session state
+        st.session_state['google_gmail_creds'] = creds
+        st.session_state['google_drive_creds'] = creds
+        
+        debug_logger.info("OAuth callback processed successfully")
+        return True
+    except Exception as e:
+        debug_logger.error(f"Error processing OAuth callback: {e}")
+        return False
