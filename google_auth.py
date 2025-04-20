@@ -101,21 +101,57 @@ def get_google_service(service_name: str):
         api_version = 'v1' if service_name == 'gmail' else 'v3'
         return build(service_name, api_version, credentials=creds)
 
-    # 2) No saved creds: initiate OAuth flow
+    # 2) No saved creds: for server environment, provide instructions
     client_config = get_google_credentials()
     if not client_config:
         st.error('Google OAuth client configuration missing.')
         return None
 
-    flow = InstalledAppFlow.from_client_config(
-        client_config,
-        scopes=SCOPES,
-        redirect_uri=get_redirect_uri()
-    )
-    creds = flow.run_local_server(port=0)
+    try:
+        # First try the local server approach
+        flow = InstalledAppFlow.from_client_config(
+            client_config,
+            scopes=SCOPES,
+            redirect_uri=get_redirect_uri()
+        )
+        
+        # Detect if we're in a browserless environment
+        try:
+            import webbrowser
+            browser = webbrowser.get()
+            creds = flow.run_local_server(port=0)
+        except Exception as e:
+            # If browser can't be found, provide instructions for manual auth
+            auth_url = flow.authorization_url()[0]
+            st.error("Cannot automatically open a browser in this environment.")
+            st.info(f"""
+            ### Manual Authentication Required
+            
+            Please complete these steps:
+            
+            1. Open this URL in a browser: [Authentication Link]({auth_url})
+            2. Log in with your Google account and grant the requested permissions
+            3. Copy the authorization code from the browser
+            4. Enter the code below
+            """)
+            auth_code = st.text_input("Enter the authorization code:", key="auth_code_input")
+            if auth_code:
+                try:
+                    flow.fetch_token(code=auth_code)
+                    creds = flow.credentials
+                    st.success("Authentication successful!")
+                except Exception as auth_err:
+                    st.error(f"Authentication failed: {auth_err}")
+                    return None
+            else:
+                return None  # No credentials yet
 
-    # Persist and return
-    _save_creds(username, service_name, creds)
-    st.session_state[f'google_{service_name}_creds'] = creds
-    api_version = 'v1' if service_name == 'gmail' else 'v3'
-    return build(service_name, api_version, credentials=creds)
+        # Persist and return
+        _save_creds(username, service_name, creds)
+        st.session_state[f'google_{service_name}_creds'] = creds
+        api_version = 'v1' if service_name == 'gmail' else 'v3'
+        return build(service_name, api_version, credentials=creds)
+    
+    except Exception as e:
+        st.error(f"Authentication error: {e}")
+        return None
