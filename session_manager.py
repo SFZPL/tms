@@ -99,16 +99,16 @@ class SessionManager:
             "session_id": str(uuid.uuid4())
         }
         
-        # Load Google credentials for this user
-        from config import load_user_google_creds
-        user_creds = load_user_google_creds(username)
-        if user_creds:
-            st.session_state.google_gmail_creds = user_creds.get("gmail_creds")
-            st.session_state.google_drive_creds = user_creds.get("drive_creds")
-            st.session_state.gmail_auth_complete = True
-            st.session_state.drive_auth_complete = True
-            st.session_state.google_auth_complete = user_creds.get("google_auth_complete", False)
-            logger.info(f"Loaded existing Google credentials for user {username}")
+        # IMPORTANT: Restore Google credentials if previously saved
+        if "_persistent_google_creds" in st.session_state:
+            saved_creds = st.session_state._persistent_google_creds
+            if saved_creds:
+                # Restore all Google credentials
+                st.session_state.google_gmail_creds = saved_creds.get("gmail_creds")
+                st.session_state.google_drive_creds = saved_creds.get("drive_creds") 
+                st.session_state.gmail_auth_complete = saved_creds.get("gmail_auth_complete", False)
+                st.session_state.drive_auth_complete = saved_creds.get("drive_auth_complete", False)
+                st.session_state.google_auth_complete = saved_creds.get("google_auth_complete", False)
         
         logger.info(f"User {username} logged in. Session expires at {session_expiry}")
     
@@ -121,29 +121,37 @@ class SessionManager:
             expired: Whether logout is due to session expiry
         """
         # Log the logout
-        username = None
         if st.session_state.get("logged_in") and st.session_state.get("user"):
             username = st.session_state.user.get("username", "Unknown")
             logger.info(f"User {username} logged out. Expired: {expired}")
         
-        # Save Google credentials before clearing session
-        from config import save_user_google_creds
-        if username and st.session_state.get("google_gmail_creds"):
-            google_creds = {
-                "gmail_creds": st.session_state.get("google_gmail_creds"),
-                "drive_creds": st.session_state.get("google_drive_creds"),
-                "google_auth_complete": st.session_state.get("google_auth_complete", False)
-            }
-            save_user_google_creds(username, google_creds)
-            logger.info(f"Saved Google credentials for user {username}")
+        # IMPORTANT: Save Google credentials before clearing session
+        google_creds = {
+            "gmail_creds": st.session_state.get("google_gmail_creds"),
+            "drive_creds": st.session_state.get("google_drive_creds"),
+            "gmail_auth_complete": st.session_state.get("gmail_auth_complete", False),
+            "drive_auth_complete": st.session_state.get("drive_auth_complete", False),
+            "google_auth_complete": st.session_state.get("google_auth_complete", False)
+        }
+        
+        # Persist credentials in Streamlit's browser-based storage
+        if google_creds["gmail_creds"]:
+            st.session_state["_persistent_google_creds"] = google_creds
+        
+        # Clear most state but keep debug and persistence
+        debug_mode = st.session_state.get("debug_mode")
+        persistent_creds = st.session_state.get("_persistent_google_creds")
         
         # Clear state
-        debug_mode = st.session_state.get("debug_mode")
-        st.session_state.clear()
+        for key in list(st.session_state.keys()):
+            if key not in ["debug_mode", "_persistent_google_creds"]:
+                st.session_state.pop(key, None)
         
-        # Restore debug mode if needed
+        # Restore persistent values
         if debug_mode:
             st.session_state.debug_mode = debug_mode
+        if persistent_creds:
+            st.session_state._persistent_google_creds = persistent_creds
         
         # Re-initialize session
         SessionManager.initialize_session()
