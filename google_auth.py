@@ -4,157 +4,212 @@ import logging
 import tempfile
 import streamlit as st
 import time
-from datetime import datetime
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 from config import get_secret, get_google_credentials
 
 # Configure logging
-debug_logger = logging.getLogger(__name__)
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     filename='google_auth.log'
 )
+logger = logging.getLogger(__name__)
 
-# OAuth scopes for Gmail and Drive
+# Define consistent scopes for all Google services
 SCOPES = [
-    'https://www.googleapis.com/auth/gmail.readonly',
+    'https://www.googleapis.com/auth/gmail.readonly', 
     'https://www.googleapis.com/auth/gmail.send',
     'https://www.googleapis.com/auth/drive.file'
 ]
 
+def is_running_locally():
+    """Definitive check for local environment"""
+    local_auth = st.secrets.get('LOCAL_AUTH', 'False')
+    return local_auth.lower() == 'true'
 
 def get_redirect_uri():
+    """Get the correct redirect URI based on environment"""
+    if is_running_locally():
+        logger.info("Using local redirect URI")
+        return "http://localhost:8501/_oauth/callback"
+    else:
+        # More robust approach - try to detect the actual URL from Streamlit
+        # For Streamlit Cloud, follow their protocol (https)
+        base_url = "prezlab-tms.streamlit.app"
+        redirect_uri = f"https://{base_url}/_oauth/callback"
+        logger.info(f"Using deployed redirect URI: {redirect_uri}")
+        return redirect_uri
+
+# Modify google_auth.py to eliminate all OOB flow references
+
+def get_google_service(service_name):
     """
-    Returns the correct redirect URI based on environment.
-    """
-    # Local testing environment
-    if os.getenv('LOCAL_AUTH', 'False').lower() == 'true':
-        debug_logger.info("Using local redirect URI")
-        return 'http://localhost:8501/_oauth/callback'
-    # Deployed environment: use domain from secrets
-    base_url = st.secrets.get('app', {}).get('host', 'YOUR_DEPLOYED_APP_DOMAIN')
-    redirect_uri = f"https://{base_url}/_oauth/callback"
-    debug_logger.info(f"Using deployed redirect URI: {redirect_uri}")
-    return redirect_uri
-
-
-def _load_creds(username: str, service: str):
-    """
-    Load pickled credentials for a given user+service from Supabase.
-    Returns None if not found or on error.
-    """
-    try:
-        resp = (
-            supabase
-            .from_('oauth_tokens')
-            .select('token')
-            .eq('username', username)
-            .eq('service', service)
-            .single()
-            .execute()
-        )
-        data = resp.data
-        if not data or 'token' not in data:
-            return None
-        raw = base64.b64decode(data['token'])
-        creds = pickle.loads(raw)
-        return creds
-    except Exception as e:
-        debug_logger.warning(f"Failed to load credentials for {username}/{service}: {e}")
-        return None
-
-
-def _save_creds(username: str, service: str, creds):
-    """
-    Serialize and upsert credentials into Supabase for future use.
-    """
-    try:
-        raw = pickle.dumps(creds)
-        b64 = base64.b64encode(raw).decode()
-        record = {'username': username, 'service': service, 'token': b64}
-        supabase.from_('oauth_tokens').upsert(record, on_conflict=['username','service']).execute()
-    except Exception as e:
-        debug_logger.error(f"Failed to save credentials for {username}/{service}: {e}")
-
-
-def get_google_service(service_name: str):
-    """
-    Return a Google API service client (Gmail or Drive), persisting OAuth tokens per app user.
-    """
-    # Ensure user is logged in
-    user = st.session_state.get('user')
-    username = user.get('username') if isinstance(user, dict) else None
-    if not username:
-        st.error('User not logged in; cannot authenticate Google service.')
-        return None
-
-    # 1) Try loading existing credentials
-    creds = _load_creds(username, service_name)
-    if creds:
-        if creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-            _save_creds(username, service_name, creds)
-        st.session_state[f'google_{service_name}_creds'] = creds
-        api_version = 'v1' if service_name == 'gmail' else 'v3'
-        return build(service_name, api_version, credentials=creds)
-
-    # 2) No saved creds: for server environment, provide instructions
-    client_config = get_google_credentials()
-    if not client_config:
-        st.error('Google OAuth client configuration missing.')
-        return None
-
-    try:
-        # First try the local server approach
-        flow = InstalledAppFlow.from_client_config(
-            client_config,
-            scopes=SCOPES,
-            redirect_uri=get_redirect_uri()
-        )
-        
-        # Detect if we're in a browserless environment
-        try:
-            import webbrowser
-            browser = webbrowser.get()
-            creds = flow.run_local_server(port=0)
-        except Exception as e:
-            # If browser can't be found, provide instructions for manual auth
-            auth_url = flow.authorization_url()[0]
-            st.error("Cannot automatically open a browser in this environment.")
-            st.info(f"""
-            ### Manual Authentication Required
-            
-            Please complete these steps:
-            
-            1. Open this URL in a browser: [Authentication Link]({auth_url})
-            2. Log in with your Google account and grant the requested permissions
-            3. Copy the authorization code from the browser
-            4. Enter the code below
-            """)
-            auth_code = st.text_input("Enter the authorization code:", key="auth_code_input")
-            if auth_code:
-                try:
-                    flow.fetch_token(code=auth_code)
-                    creds = flow.credentials
-                    st.success("Authentication successful!")
-                except Exception as auth_err:
-                    st.error(f"Authentication failed: {auth_err}")
-                    return None
-            else:
-                return None  # No credentials yet
-
-        # Persist and return
-        _save_creds(username, service_name, creds)
-        st.session_state[f'google_{service_name}_creds'] = creds
-        api_version = 'v1' if service_name == 'gmail' else 'v3'
-        return build(service_name, api_version, credentials=creds)
+    Unified function to get any Google service with proper authentication
     
+    Args:
+        service_name: Name of the service ('gmail' or 'drive')
+        
+    Returns:
+        Service object or None if authentication fails
+    """
+    logger.info(f"Getting Google {service_name} service")
+    
+    # First, check if we already have valid credentials for the service
+    cred_key = f"google_{service_name}_creds"
+    if cred_key in st.session_state and st.session_state[cred_key]:
+        creds = st.session_state[cred_key]
+        
+        # Check if credentials are expired and need refresh
+        if hasattr(creds, 'expired') and creds.expired and hasattr(creds, 'refresh_token'):
+            try:
+                logger.info(f"Refreshing expired credentials for {service_name}")
+                creds.refresh(Request())
+                st.session_state[cred_key] = creds
+            except Exception as e:
+                logger.error(f"Failed to refresh credentials: {e}")
+                # Don't delete credentials yet, try to use them anyway
+        
+        # Try to build the service with existing credentials
+        try:
+            api_version = 'v3' if service_name == 'drive' else 'v1'
+            service = build(service_name, api_version, credentials=creds)
+            logger.info(f"Successfully built {service_name} service using existing credentials")
+            return service
+        except Exception as e:
+            logger.error(f"Error building {service_name} service with existing credentials: {e}")
+            # Continue to authentication flow
+    
+    # Check if we should try the other service's credentials
+    other_service = 'drive' if service_name == 'gmail' else 'gmail'
+    other_cred_key = f"google_{other_service}_creds"
+    
+    if other_cred_key in st.session_state and st.session_state[other_cred_key]:
+        # Try to use credentials from the other service (they should work for both)
+        try:
+            logger.info(f"Trying to use {other_service} credentials for {service_name}")
+            creds = st.session_state[other_cred_key]
+            api_version = 'v3' if service_name == 'drive' else 'v1'
+            service = build(service_name, api_version, credentials=creds)
+            
+            # If successful, store these credentials for this service too
+            st.session_state[cred_key] = creds
+            logger.info(f"Successfully used {other_service} credentials for {service_name}")
+            return service
+        except Exception as e:
+            logger.error(f"Error using {other_service} credentials for {service_name}: {e}")
+            # Continue to authentication flow
+    
+    # If we reach here, we need to initiate the OAuth flow
+    try:
+        # Load client config from Streamlit secrets
+        client_config_str = st.secrets["gcp"]["client_config"]
+        if not client_config_str:
+            logger.error("Google API client config not found in secrets")
+            st.error("Google API credentials are missing. Please check your configuration.")
+            return None
+            
+        client_config = json.loads(client_config_str)
+        
+        # Create a temporary file for credentials
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.json', mode='w') as temp:
+            json.dump(client_config, temp)
+            temp_path = temp.name
+        
+        try:
+            # Use a consistent redirect URI
+            redirect_uri = "https://prezlab-tms.streamlit.app/"
+            logger.info(f"Using redirect URI: {redirect_uri}")
+            
+            flow = InstalledAppFlow.from_client_secrets_file(
+                temp_path, 
+                SCOPES,
+                redirect_uri=redirect_uri
+            )
+            
+            # Generate authorization URL
+            auth_url, _ = flow.authorization_url(
+                prompt='consent', 
+                access_type='offline',
+                include_granted_scopes='true'
+            )
+            
+            # Save service name being authenticated to session state
+            st.session_state["authenticating_service"] = service_name
+            
+            # Prompt user to authenticate
+            st.info(f"### Google Authentication Required")
+            st.markdown(f"[Click here to authenticate with Google {service_name.capitalize()}]({auth_url})")
+            
+            # Add a cancel button
+            if st.button("Cancel Authentication"):
+                if "authenticating_service" in st.session_state:
+                    del st.session_state["authenticating_service"]
+                st.rerun()
+            
+            # Stop execution to wait for redirect
+            st.stop()
+        finally:
+            # Clean up temporary file
+            try:
+                os.unlink(temp_path)
+            except Exception as e:
+                logger.warning(f"Failed to delete temporary file: {e}")
     except Exception as e:
-        st.error(f"Authentication error: {e}")
-        return None
+        logger.error(f"Google Authentication Error: {e}", exc_info=True)
+        st.error(f"Failed to authenticate with Google: {str(e)}")
+    
+    return None
+
+def process_oauth_callback(code):
+    """Process OAuth callback code without disrupting session state"""
+    try:
+        print(f"Processing OAuth code: {code[:10]}..." if len(code) > 10 else code)
+        
+        # Load client config from Streamlit secrets
+        client_config_str = st.secrets["gcp"]["client_config"]
+        client_config = json.loads(client_config_str)
+        
+        # Create a temporary file for credentials
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.json', mode='w') as temp:
+            json.dump(client_config, temp)
+            temp_path = temp.name
+        
+        try:
+            # Consistent redirect URI
+            redirect_uri = "https://prezlab-tms.streamlit.app/"
+            flow = InstalledAppFlow.from_client_secrets_file(
+                temp_path, 
+                SCOPES,
+                redirect_uri=redirect_uri
+            )
+            
+            # Exchange code for token
+            flow.fetch_token(code=code)
+            creds = flow.credentials
+            
+            # Store credentials for both services to avoid multiple auth
+            st.session_state["google_gmail_creds"] = creds
+            st.session_state["google_drive_creds"] = creds
+            
+            # Set all auth flags
+            st.session_state["gmail_auth_complete"] = True
+            st.session_state["drive_auth_complete"] = True
+            st.session_state["google_auth_complete"] = True
+            
+            print("Authentication successful for all Google services!")
+            return True
+        finally:
+            # Clean up temporary file
+            try:
+                os.unlink(temp_path)
+            except:
+                pass
+    except Exception as e:
+        print(f"Error processing OAuth code: {e}")
+        return False
+    
 
 def handle_oauth_callback(code):
     """Process Google OAuth callback code"""
@@ -192,28 +247,6 @@ def handle_oauth_callback(code):
             st.session_state["gmail_auth_complete"] = True
             st.session_state["drive_auth_complete"] = True
             st.session_state["google_auth_complete"] = True
-            
-            # ADDED: Save credentials for the current user if logged in
-            try:
-                from session_manager import SessionManager
-                if "logged_in" in st.session_state and st.session_state.get("user"):
-                    username = st.session_state.user.get("username")
-                    if username:
-                        # Create a special session state key for this user's credentials
-                        cred_key = f"persistent_{username}_google_creds"
-                        
-                        # Store current credentials
-                        st.session_state[cred_key] = {
-                            "gmail_creds": st.session_state.get("google_gmail_creds"),
-                            "drive_creds": st.session_state.get("google_drive_creds"),
-                            "gmail_auth_complete": True,
-                            "drive_auth_complete": True,
-                            "google_auth_complete": True,
-                            "timestamp": datetime.now().isoformat() if 'datetime' in globals() else str(time.time())
-                        }
-                        logger.info(f"Stored Google credentials for user {username} after OAuth")
-            except Exception as save_error:
-                logger.error(f"Error storing credentials: {save_error}")
             
             logger.info("Google authentication successful for all services")
             return True

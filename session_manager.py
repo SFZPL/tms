@@ -78,8 +78,6 @@ class SessionManager:
             
         return True
     
-    # Modify the login method in SessionManager to load credentials
-
     @staticmethod
     def login(username: str, expiry_hours: int = 8):
         """
@@ -101,13 +99,19 @@ class SessionManager:
             "session_id": str(uuid.uuid4())
         }
         
-        # Try to load saved Google credentials for this user
-        SessionManager.load_google_credentials()
+        # IMPORTANT: Restore Google credentials if previously saved
+        if "_persistent_google_creds" in st.session_state:
+            saved_creds = st.session_state._persistent_google_creds
+            if saved_creds:
+                # Restore all Google credentials
+                st.session_state.google_gmail_creds = saved_creds.get("gmail_creds")
+                st.session_state.google_drive_creds = saved_creds.get("drive_creds") 
+                st.session_state.gmail_auth_complete = saved_creds.get("gmail_auth_complete", False)
+                st.session_state.drive_auth_complete = saved_creds.get("drive_auth_complete", False)
+                st.session_state.google_auth_complete = saved_creds.get("google_auth_complete", False)
         
         logger.info(f"User {username} logged in. Session expires at {session_expiry}")
-
-    # Modify the logout method to save credentials before clearing state
-
+    
     @staticmethod
     def logout(expired: bool = False):
         """
@@ -121,30 +125,33 @@ class SessionManager:
             username = st.session_state.user.get("username", "Unknown")
             logger.info(f"User {username} logged out. Expired: {expired}")
         
-            # Store Google credentials before clearing session
-            SessionManager.store_google_credentials()
+        # IMPORTANT: Save Google credentials before clearing session
+        google_creds = {
+            "gmail_creds": st.session_state.get("google_gmail_creds"),
+            "drive_creds": st.session_state.get("google_drive_creds"),
+            "gmail_auth_complete": st.session_state.get("gmail_auth_complete", False),
+            "drive_auth_complete": st.session_state.get("drive_auth_complete", False),
+            "google_auth_complete": st.session_state.get("google_auth_complete", False)
+        }
         
-        # Save debug_mode value
+        # Persist credentials in Streamlit's browser-based storage
+        if google_creds["gmail_creds"]:
+            st.session_state["_persistent_google_creds"] = google_creds
+        
+        # Clear most state but keep debug and persistence
         debug_mode = st.session_state.get("debug_mode")
-        
-        # Make a copy of all credential keys since we want to keep them
-        all_cred_keys = {}
-        for key in list(st.session_state.keys()):
-            if key.startswith("persistent_"):
-                all_cred_keys[key] = st.session_state[key]
+        persistent_creds = st.session_state.get("_persistent_google_creds")
         
         # Clear state
         for key in list(st.session_state.keys()):
-            if key != "debug_mode" and not key.startswith("persistent_"):
+            if key not in ["debug_mode", "_persistent_google_creds"]:
                 st.session_state.pop(key, None)
         
-        # Restore credential keys
-        for key, value in all_cred_keys.items():
-            st.session_state[key] = value
-        
-        # Restore debug mode if it was set
+        # Restore persistent values
         if debug_mode:
             st.session_state.debug_mode = debug_mode
+        if persistent_creds:
+            st.session_state._persistent_google_creds = persistent_creds
         
         # Re-initialize session
         SessionManager.initialize_session()
@@ -280,79 +287,3 @@ class SessionManager:
             return False
         
         return True
-    
-    @staticmethod
-    def store_google_credentials():
-        """
-        Store Google credentials in a special session state key that persists
-        """
-        if not st.session_state.get("logged_in") or not st.session_state.get("user"):
-            return False
-            
-        username = st.session_state.user.get("username")
-        if not username:
-            return False
-        
-        # Create a special session state key for this user's credentials
-        cred_key = f"persistent_{username}_google_creds"
-        
-        # Store current credentials
-        st.session_state[cred_key] = {
-            "gmail_creds": st.session_state.get("google_gmail_creds"),
-            "drive_creds": st.session_state.get("google_drive_creds"),
-            "gmail_auth_complete": st.session_state.get("gmail_auth_complete", False),
-            "drive_auth_complete": st.session_state.get("drive_auth_complete", False),
-            "google_auth_complete": st.session_state.get("google_auth_complete", False),
-            "timestamp": datetime.now().isoformat()
-        }
-        
-        logger.info(f"Stored Google credentials for user {username} in session state")
-        return True
-    
-    @staticmethod
-    def load_google_credentials():
-        """
-        Load Google credentials from session state for current user
-        """
-        if not st.session_state.get("logged_in") or not st.session_state.get("user"):
-            return False
-            
-        username = st.session_state.user.get("username")
-        if not username:
-            return False
-        
-        # Look for the special session state key for this user
-        cred_key = f"persistent_{username}_google_creds"
-        
-        if cred_key not in st.session_state:
-            logger.info(f"No saved credentials found for user {username}")
-            return False
-        
-        # Restore credentials from the saved state
-        google_creds = st.session_state[cred_key]
-        
-        if google_creds:
-            st.session_state.google_gmail_creds = google_creds.get("gmail_creds")
-            st.session_state.google_drive_creds = google_creds.get("drive_creds")
-            st.session_state.gmail_auth_complete = google_creds.get("gmail_auth_complete", False)
-            st.session_state.drive_auth_complete = google_creds.get("drive_auth_complete", False)
-            st.session_state.google_auth_complete = google_creds.get("google_auth_complete", False)
-            
-            logger.info(f"Loaded Google credentials for user {username} from session state")
-            return True
-        
-        return False
-
-    @staticmethod
-    def check_google_auth_status():
-        """
-        Check if the current user has valid Google authentication
-        
-        Returns:
-            True if authenticated, False otherwise
-        """
-        # Check current session state for authentication flags
-        gmail_auth = st.session_state.get("gmail_auth_complete", False) or "google_gmail_creds" in st.session_state
-        drive_auth = st.session_state.get("drive_auth_complete", False) or "google_drive_creds" in st.session_state
-        
-        return gmail_auth and drive_auth
