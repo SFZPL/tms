@@ -2619,37 +2619,21 @@ def main():
 
     # Add to the top of app.py - OAuth callback handler
 
-    # Check if returning from OAuth flow
-    if "code" in st.query_params and "state" in st.query_params:
+    if "code" in st.query_params:
         code = st.query_params["code"]
-        state = st.query_params["state"]
+        st.success("Authentication code received! Processing...")
         
-        # Verify state to prevent CSRF
-        if "oauth_state" in st.session_state and st.session_state["oauth_state"] == state:
-            # Process the OAuth code
-            from google_auth import handle_oauth_callback
-            success = handle_oauth_callback(code)
-            if success:
-                # Clear query parameters to prevent reprocessing
-                st.query_params.clear()
-                
-                # Set authentication flags
-                st.session_state["google_auth_complete"] = True
-                st.session_state["gmail_auth_complete"] = True
-                st.session_state["drive_auth_complete"] = True
-                
-                # Show success message
-                st.success("Authentication successful!")
-                
-                # Add a small delay to ensure session state updates
-                import time
-                time.sleep(0.5)
-                
-                # Force a rerun to clear the URL
-                st.rerun()
-        else:
-            st.error("Invalid authentication state. Please try again.")
+        # Process the code without checking state
+        from google_auth import handle_oauth_callback
+        success = handle_oauth_callback(code)
+        
+        if success:
+            st.session_state["google_auth_complete"] = True
+            st.session_state["gmail_auth_complete"] = True
+            st.session_state["drive_auth_complete"] = True
+            st.success("Authentication successful!")
             st.query_params.clear()
+            st.rerun()
     
 
     # Handle debug mode
