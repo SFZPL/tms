@@ -348,7 +348,9 @@ def auth_debug_page():
                 st.success(f"✅ Encryption key found (length: {len(key)})")
                 
                 # Test encryption/decryption
-                test_data = {"test": "data", "time": str(time.time())}
+                import time as time_module  # Add this near your other imports
+                # Then use:
+                test_data = {"test": "data", "time": str(time_module.time())}
                 st.write("Test data:", test_data)
                 
                 encrypted = encrypt_token(test_data)

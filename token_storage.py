@@ -49,30 +49,27 @@ def get_secret(key, default=None):
     
     print(f"Secret key '{key}' not found in available keys")
     return default
+# In token_storage.py, modify get_supabase_client to return just the client:
 def get_supabase_client():
-    """Initialize Supabase client with improved error handling"""
     try:
         try:
             from supabase import create_client
         except ImportError:
-            logger.error("supabase-py package not installed. Run: pip install supabase-py")
-            return None, "supabase-py package not installed. Run: pip install supabase-py"
+            logger.error("supabase-py package not installed")
+            return None
             
         url = get_secret("supabase.url")
         key = get_secret("supabase.key")
         
         if not url or not key:
-            logger.error(f"Missing Supabase credentials: URL={bool(url)}, Key={bool(key)}")
-            return None, "Missing Supabase credentials in Streamlit secrets"
+            logger.error(f"Missing Supabase credentials")
+            return None
             
         client = create_client(url, key)
-        return client, None  # Return client and no error
+        return client  # Return just the client
     except Exception as e:
-        error_msg = f"Error initializing Supabase client: {str(e)}"
-        logger.error(error_msg)
-        logger.error(traceback.format_exc())
-        return None, error_msg
-
+        logger.error(f"Error initializing Supabase client: {e}")
+        return None
 def get_encryption_key():
     """Get or generate encryption key with improved security"""
     key = get_secret("ENCRYPTION_KEY", None)
@@ -156,11 +153,11 @@ def save_user_token(username, service, token_data):
             logger.error(f"Invalid parameters: username={username}, service={service}")
             return False
             
-        supabase, error = get_supabase_client()
+        supabase = get_supabase_client()
         if not supabase:
-            logger.error(f"Failed to initialize Supabase client: {error}")
+            logger.error("Failed to initialize Supabase client")
             return False
-            
+                    
         logger.info("Supabase client initialized successfully")
         
         encrypted_token = encrypt_token(token_data)
@@ -225,10 +222,10 @@ def get_user_token(username, service):
             logger.error(f"Invalid parameters: username={username}, service={service}")
             return None
             
-        supabase, error = get_supabase_client()
+        supabase = get_supabase_client()
         if not supabase:
-            logger.error(f"Failed to initialize Supabase client: {error}")
-            return None
+            logger.error("Failed to initialize Supabase client")
+            return False
             
         response = supabase.table("oauth_tokens").select("token").eq("username", username).eq("service", service).execute()
         
@@ -261,10 +258,10 @@ def test_supabase_connection():
         logger.info("Testing Supabase connection...")
         
         # Get Supabase client
-        supabase, error = get_supabase_client()
+        supabase = get_supabase_client()
         if not supabase:
-            return False, f"Failed to initialize Supabase client: {error}"
-        
+            logger.error("Failed to initialize Supabase client")
+            return False
         # Try to access the oauth_tokens table
         try:
             # First try a simple query that doesn't modify data
