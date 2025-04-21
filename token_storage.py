@@ -71,34 +71,27 @@ def get_supabase_client():
         logger.error(f"Error initializing Supabase client: {e}")
         return None
 def get_encryption_key():
-    """Get or generate encryption key with improved security"""
-    key = get_secret("ENCRYPTION_KEY", None)
-    if key:
-        try:
-            # Ensure key is properly formatted for Fernet
-            if isinstance(key, str):
-                if len(key) < 32:  # Minimum entropy needed
-                    logger.warning("Provided encryption key is too short, generating new one")
-                    return base64.urlsafe_b64encode(os.urandom(32))
-                    
-                # Try to decode the key to see if it's valid base64
-                try:
-                    base64.urlsafe_b64decode(key.encode())
-                    return key.encode()
-                except:
-                    # If not valid base64, encode it properly
-                    return base64.urlsafe_b64encode(key.encode()[:32].ljust(32, b'\0'))
-            else:
-                # Already bytes
-                return base64.urlsafe_b64encode(key[:32].ljust(32, b'\0'))
-        except Exception as e:
-            logger.error(f"Error processing encryption key: {e}")
-            
-    # Generate a new key
+    """Get encryption key with proper error handling"""
     try:
-        return base64.urlsafe_b64encode(os.urandom(32))
+        # Try to get key from secrets
+        key = get_secret("ENCRYPTION_KEY", None)
+        if key and isinstance(key, str):
+            # Ensure the key is properly formatted
+            try:
+                # Test if it's a valid Fernet key by attempting to create a cipher
+                test_key = key.encode()
+                Fernet(test_key)
+                return test_key
+            except Exception as e:
+                logger.warning(f"Invalid encryption key format: {e}")
+                # Continue to key generation
+        
+        # Generate a new key if none exists or invalid format
+        logger.warning("Generating new encryption key")
+        return Fernet.generate_key()
+        
     except Exception as e:
-        logger.error(f"Error generating encryption key: {e}")
+        logger.error(f"Error handling encryption key: {e}")
         # Only use fallback in extreme cases
         return b'lzNiipUzCgW4sESOHWaBmE5w8ACMb7DBIP3U0wpzCuQ='
 
@@ -313,3 +306,25 @@ def test_supabase_connection():
         logger.error(f"Connection test failed: {e}")
         logger.error(traceback.format_exc())
         return False, f"Connection test failed with error: {str(e)}"
+    
+def reset_user_tokens():
+    """Reset all stored tokens - use when encryption key changes"""
+    try:
+        logger.info("Attempting to reset all user tokens")
+        supabase = get_supabase_client()
+        if not supabase:
+            logger.error("Failed to initialize Supabase client")
+            return False
+            
+        # Delete all tokens
+        result = supabase.table("oauth_tokens").delete().neq("username", "DO_NOT_DELETE").execute()
+        
+        if hasattr(result, 'error') and result.error:
+            logger.error(f"Reset error: {result.error.message}")
+            return False
+            
+        logger.info(f"Successfully reset tokens. Affected rows: {len(result.data)}")
+        return True
+    except Exception as e:
+        logger.error(f"Error resetting tokens: {e}")
+        return False

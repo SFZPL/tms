@@ -315,6 +315,22 @@ def auth_debug_page():
     
     for key, value in auth_state.items():
         st.write(f"**{key}:** {value}")
+
+    # In the auth_debug_page function, add:
+    st.subheader("Token Reset")
+    if st.button("Reset All OAuth Tokens"):
+        from token_storage import reset_user_tokens
+        success = reset_user_tokens()
+        if success:
+            # Also clear local session tokens
+            for key in ["google_gmail_creds", "google_drive_creds", 
+                        "gmail_auth_complete", "drive_auth_complete", 
+                        "google_auth_complete"]:
+                if key in st.session_state:
+                    del st.session_state[key]
+            st.success("All tokens reset successfully. Please re-authenticate.")
+        else:
+            st.error("Failed to reset tokens. Check logs for details.")
     
     # Supabase Testing
     st.subheader("Supabase Connection Test")
