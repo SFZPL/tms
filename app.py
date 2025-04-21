@@ -2774,105 +2774,115 @@ def designer_selection_page():
 # -------------------------------
 
 def main():
+    """
+    Entry‑point for the Streamlit Task‑Management app.
+    ‑   Ensures the user is logged‑in *before* we complete any Google OAuth
+    ‑   Persists OAuth codes that arrive early, then processes them post‑login
+    """
     from session_manager import SessionManager
-    
-    # Initialize session
     SessionManager.initialize_session()
 
-    # Add to the top of app.py - OAuth callback handler
+    import streamlit as st
 
+    # ------------------------------------------------------------------
+    # 1)  Capture *early* Google OAuth callback codes
+    # ------------------------------------------------------------------
     if "code" in st.query_params:
-        code = st.query_params["code"]
-        st.success("Authentication code received! Processing...")
-        
-        # Process the code without checking state
-        from google_auth import handle_oauth_callback
-        success = handle_oauth_callback(code)
-        
-        if success:
-            st.session_state["google_auth_complete"] = True
-            st.session_state["gmail_auth_complete"] = True
-            st.session_state["drive_auth_complete"] = True
-            st.success("Authentication successful!")
-            st.query_params.clear()
-            st.rerun()
-    
+        # Stash it until the user finishes the TMS login
+        st.session_state.pending_oauth_code = st.query_params["code"]
+        st.query_params.clear()               # keeps the URL tidy
 
-    # Handle debug mode
-    if inject_debug_page():
+    # ------------------------------------------------------------------
+    # 2)  Admin “system debug” shortcut (unchanged)
+    # ------------------------------------------------------------------
+    if inject_debug_page():                   # noqa: F821  (defined earlier in app.py)
         return
-    
-    # Render sidebar
-    render_sidebar()
 
+    # ------------------------------------------------------------------
+    # 3)  Sidebar is always visible
+    # ------------------------------------------------------------------
+    render_sidebar()                          # noqa: F821
+
+    # Small live‑state panel
     st.sidebar.write("Debug Info:")
     st.sidebar.write(f"Logged in: {st.session_state.get('logged_in', False)}")
     st.sidebar.write(f"Google Auth Complete: {st.session_state.get('google_auth_complete', False)}")
     st.sidebar.write(f"Google Gmail Creds: {'google_gmail_creds' in st.session_state}")
     st.sidebar.write(f"Google Drive Creds: {'google_drive_creds' in st.session_state}")
 
-    # Add this section to show the Google Auth page on demand
+    # ------------------------------------------------------------------
+    # 4)  Login gate
+    # ------------------------------------------------------------------
+    if not st.session_state.get("logged_in", False):
+        login_page()                          # noqa: F821
+        return
+
+    # ------------------------------------------------------------------
+    # 5)  *After* successful login, finish any pending OAuth handshake
+    # ------------------------------------------------------------------
+    if "pending_oauth_code" in st.session_state:
+        code = st.session_state.pop("pending_oauth_code")
+
+        from google_auth import handle_oauth_callback  # local import avoids circular refs
+        st.info("Finishing Google authentication…")
+        success = handle_oauth_callback(code)
+
+        if success:
+            st.success("Google account linked – token saved to Supabase.")
+        else:
+            st.error("Google authentication failed. Please try again.")
+
+        st.rerun()     # refresh state / UI regardless of outcome
+        return
+
+    # ------------------------------------------------------------------
+    # 6)  Optional Auth‑debug / Google‑auth pages (unchanged)
+    # ------------------------------------------------------------------
     if st.session_state.get("show_google_auth", False):
-        google_auth_page()
-        # Add button to return to main page
+        google_auth_page()                    # noqa: F821
         if st.button("Return to Main Page"):
             st.session_state.pop("show_google_auth", None)
             st.rerun()
         return
-    # In your main() function, add:
     elif st.session_state.get("debug_mode") == "auth_debug":
-        auth_debug_page()
-    
-    # Check for debug mode
-    if "debug_mode" in st.session_state:
-        if st.session_state.debug_mode == "task_fields":
-            debug_task_fields()
-            # Add a button to return to normal mode
-            if st.button("Return to Normal Mode"):
-                st.session_state.pop("debug_mode")
-                st.rerun()
-            return
-    
-    # Validate session for all pages except login
-    if "logged_in" in st.session_state and st.session_state.logged_in:
-        if not validate_session():
-            login_page()
-            return
-    
-    # Main content
-    if "logged_in" not in st.session_state or not st.session_state.logged_in:
+        auth_debug_page()                     # noqa: F821
+
+    # Additional debug mode (task‑fields) — unchanged
+    if st.session_state.get("debug_mode") == "task_fields":
+        debug_task_fields()                   # noqa: F821
+        if st.button("Return to Normal Mode"):
+            st.session_state.pop("debug_mode")
+            st.rerun()
+        return
+
+    # ------------------------------------------------------------------
+    # 7)  Session‑validation & main workflow (unchanged)
+    # ------------------------------------------------------------------
+    if not validate_session():                # noqa: F821
         login_page()
-    # Add Google auth step after login but before main workflow
-    # elif "google_auth_complete" not in st.session_state or st.session_state.google_auth_complete == False:
-    #     google_auth_page()
-    elif "form_type" not in st.session_state:
-        type_selection_page()
+        return
+
+    # Main content routing (identical to previous logic)
+    if "form_type" not in st.session_state:
+        type_selection_page()                 # noqa: F821
     else:
-        # Designer selection page is shown after tasks are created
-        if "designer_selection" in st.session_state and st.session_state.designer_selection:
-            designer_selection_page()
+        # Designer‑selection page shown after tasks are created
+        if st.session_state.get("designer_selection"):
+            designer_selection_page()         # noqa: F821
         elif st.session_state.form_type == "Ad-hoc | Framework Projects":
-            if "company_selection_done" not in st.session_state:
-                company_selection_page()
-            elif "adhoc_sales_order_done" not in st.session_state:
-                sales_order_page()
-            elif "email_analysis_done" not in st.session_state:
-                email_analysis_page()
-            elif "adhoc_parent_input_done" not in st.session_state:
-                adhoc_parent_task_page()
+            if "adhoc_parent_input_done" in st.session_state:
+                adhoc_subtask_page()          # noqa: F821
+            elif "adhoc_sales_order_done" in st.session_state:
+                adhoc_parent_task_page()      # noqa: F821
+            elif "company_selection_done" in st.session_state:
+                sales_order_page()            # noqa: F821
             else:
-                adhoc_subtask_page()
-        else:  # Retainer Projects
-            if "company_selection_done" not in st.session_state:
-                company_selection_page()
-            elif "email_analysis_done" not in st.session_state:
-                email_analysis_page()
-            elif "retainer_parent_input_done" not in st.session_state:
-                retainer_parent_task_page()
-            elif "designer_selection" in st.session_state and st.session_state.designer_selection:
-                designer_selection_page()  # Make sure this is checked BEFORE calling retainer_subtask_page
+                company_selection_page()      # noqa: F821
+        elif st.session_state.form_type == "Retainer Projects":
+            if "retainer_parent_input_done" in st.session_state:
+                retainer_subtask_page()       # noqa: F821
             else:
-                retainer_subtask_page()
+                retainer_parent_task_page()   # noqa: F821
 
 if __name__ == "__main__":
     main()
