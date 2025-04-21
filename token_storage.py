@@ -80,37 +80,57 @@ def decrypt_token(encrypted_token):
         logger.error(f"Error decrypting token: {e}")
         return None
 
+# Add this to your save_user_token function
 def save_user_token(username, service, token_data):
     """Save a user's OAuth token to Supabase"""
     try:
+        logger.info(f"Starting save_user_token for username={username}, service={service}")
+        
         supabase = get_supabase_client()
         if not supabase:
             logger.error("Failed to initialize Supabase client")
             return False
             
+        logger.info("Supabase client initialized successfully")
+        
         encrypted_token = encrypt_token(token_data)
         if not encrypted_token:
             logger.error("Failed to encrypt token data")
             return False
             
+        logger.info("Token encrypted successfully")
+        
         # Check if token already exists
-        response = supabase.table("oauth_tokens").select("*").eq("username", username).eq("service", service).execute()
-        
-        if response.data:
-            # Update existing record
-            supabase.table("oauth_tokens").update({"token": encrypted_token}).eq("username", username).eq("service", service).execute()
-        else:
-            # Insert new record
-            supabase.table("oauth_tokens").insert({
-                "username": username,
-                "service": service,
-                "token": encrypted_token
-            }).execute()
-        
-        logger.info(f"Saved {service} token for user {username}")
-        return True
+        try:
+            response = supabase.table("oauth_tokens").select("*").eq("username", username).eq("service", service).execute()
+            logger.info(f"Query result: {response.data}")
+        except Exception as e:
+            logger.error(f"Error checking for existing token: {e}")
+            return False
+            
+        try:
+            if response.data:
+                # Update existing record
+                logger.info(f"Updating existing token for {username}/{service}")
+                result = supabase.table("oauth_tokens").update({"token": encrypted_token}).eq("username", username).eq("service", service).execute()
+                logger.info(f"Update result: {result}")
+            else:
+                # Insert new record
+                logger.info(f"Inserting new token for {username}/{service}")
+                result = supabase.table("oauth_tokens").insert({
+                    "username": username,
+                    "service": service,
+                    "token": encrypted_token
+                }).execute()
+                logger.info(f"Insert result: {result}")
+            
+            logger.info(f"Saved {service} token for user {username}")
+            return True
+        except Exception as e:
+            logger.error(f"Error saving to database: {e}", exc_info=True)
+            return False
     except Exception as e:
-        logger.error(f"Error saving token to Supabase: {e}")
+        logger.error(f"Error in save_user_token: {e}", exc_info=True)
         return False
 
 def get_user_token(username, service):

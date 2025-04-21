@@ -280,11 +280,10 @@ def process_oauth_callback(code):
         return False
     
 
+# In google_auth.py - handle_oauth_callback function
 def handle_oauth_callback(code):
-    """Process Google OAuth callback code with improved error handling"""
+    """Process Google OAuth callback code with simplified approach"""
     try:
-        from token_storage import save_user_token
-        
         logger.info(f"Processing OAuth code")
         
         # Load client config
@@ -314,36 +313,42 @@ def handle_oauth_callback(code):
             st.session_state["google_gmail_creds"] = creds
             st.session_state["google_drive_creds"] = creds
             
-            # Set authentication flags
-            st.session_state["gmail_auth_complete"] = True
-            st.session_state["drive_auth_complete"] = True
-            st.session_state["google_auth_complete"] = True
-            
-            # Save to Supabase if user is logged in
-            if "user" in st.session_state and st.session_state.user:
-                username = st.session_state.user.get("username")
-                if username:
-                    # Convert credentials to serializable format
-                    creds_dict = {
-                        'token': creds.token,
-                        'refresh_token': creds.refresh_token,
-                        'token_uri': creds.token_uri,
-                        'client_id': creds.client_id,
-                        'client_secret': creds.client_secret,
-                        'scopes': creds.scopes
-                    }
-                    
-                    # Log before saving to help debugging
-                    logger.info(f"Saving tokens for user {username}")
-                    
-                    # Save to both services for simplicity
-                    save_success1 = save_user_token(username, "google_gmail", creds_dict)
-                    save_success2 = save_user_token(username, "google_drive", creds_dict)
-                    
-                    if not save_success1 or not save_success2:
-                        logger.error("Failed to save tokens to database")
+            # Import and save to Supabase
+            try:
+                from token_storage import save_user_token
                 
-            logger.info("Google authentication successful for all services")
+                # Extract username from session state
+                if "user" in st.session_state and st.session_state.user:
+                    username = st.session_state.user.get("username")
+                    if username:
+                        logger.info(f"Attempting to save tokens for user: {username}")
+                        
+                        # Convert credentials to serializable format
+                        creds_dict = {
+                            'token': creds.token,
+                            'refresh_token': creds.refresh_token,
+                            'token_uri': creds.token_uri,
+                            'client_id': creds.client_id,
+                            'client_secret': creds.client_secret,
+                            'scopes': creds.scopes
+                        }
+                        
+                        # Log token info (without sensitive data)
+                        logger.info(f"Token info - has token: {'token' in creds_dict}, has refresh_token: {'refresh_token' in creds_dict}")
+                        
+                        # Save tokens
+                        gmail_saved = save_user_token(username, "google_gmail", creds_dict)
+                        drive_saved = save_user_token(username, "google_drive", creds_dict)
+                        
+                        logger.info(f"Token save results - Gmail: {gmail_saved}, Drive: {drive_saved}")
+                    else:
+                        logger.error("Username not found in session state")
+                else:
+                    logger.error("User information not found in session state")
+            except Exception as e:
+                logger.error(f"Error saving tokens to database: {e}", exc_info=True)
+            
+            logger.info("Google authentication successful")
             return True
         finally:
             # Clean up temporary file
@@ -353,5 +358,4 @@ def handle_oauth_callback(code):
                 logger.warning(f"Failed to delete temporary file: {e}")
     except Exception as e:
         logger.error(f"Error handling OAuth callback: {e}", exc_info=True)
-        st.error(f"Authentication error: {str(e)}")
         return False
