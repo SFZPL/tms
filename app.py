@@ -491,7 +491,7 @@ def get_sales_order_lines(models, uid, sales_order_name):
         if not order_line_ids:
             return []
         lines = models.execute_kw(
-            os.getenv("ODOO_DB"), uid, os.getenv("ODOO_PASSWORD"),
+            ODOO_DB, uid, ODOO_PASSWORD,  # Fixed: Using constants instead of os.getenv
             'sale.order.line', 'read',
             [order_line_ids],
             {'fields': ['id', 'name']}
