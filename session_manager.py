@@ -124,28 +124,79 @@ class SessionManager:
 
         # ------------------------------------------------------------
         # 3)  NEW — persist any Google tokens already in memory
+        # --------    @staticmethod
+    def login(username: str, expiry_hours: int = 8):
+        """
+        Log the user in, start/refresh the Streamlit session, and – crucially –
+        save any Google OAuth credentials to Supabase so they survive future
+        log‑ins.
+
+        Args
+        ----
+        username      The username that just authenticated in TMS
+        expiry_hours  How long (in hours) the TMS session will stay valid
+        """
+        from datetime import datetime, timedelta
+        import uuid
+        import streamlit as st
+        import logging
+
+        logger = logging.getLogger(__name__)
+
+        # ------------------------------------------------------------
+        # 1)  Standard login bookkeeping
+        # ------------------------------------------------------------
+        login_time      = datetime.now()
+        session_expiry  = login_time + timedelta(hours=expiry_hours)
+
+        st.session_state.logged_in        = True
+        st.session_state.login_time       = login_time
+        st.session_state.session_expiry   = session_expiry
+        st.session_state.user             = {
+            "username":   username,
+            "session_id": str(uuid.uuid4()),
+        }
+
+        # ------------------------------------------------------------
+        # 2)  Restore any creds that were cached on LOG‑OUT ***********
+        # ------------------------------------------------------------
+        if "_persistent_google_creds" in st.session_state:
+            cached = st.session_state._persistent_google_creds or {}
+            st.session_state.google_gmail_creds   = cached.get("gmail_creds")
+            st.session_state.google_drive_creds   = cached.get("drive_creds")
+            st.session_state.gmail_auth_complete  = cached.get("gmail_auth_complete",  False)
+            st.session_state.drive_auth_complete  = cached.get("drive_auth_complete",  False)
+            st.session_state.google_auth_complete = cached.get("google_auth_complete", False)
+
+        logger.info(f"User {username} logged in – session expires at {session_expiry}")
+
+        # ------------------------------------------------------------
+        # 3)  NEW —— Persist any OAuth creds already in memory
         # ------------------------------------------------------------
         try:
             from token_storage import save_user_token
 
             for svc in ("gmail", "drive"):
-                cred_key = f"google_{svc}_creds"
-                creds = st.session_state.get(cred_key)
+                cred_key  = f"google_{svc}_creds"
+                creds     = st.session_state.get(cred_key)
 
-                if creds:
-                    creds_dict = {
-                        "token":         creds.token,
-                        "refresh_token": getattr(creds, "refresh_token", None),
-                        "token_uri":     creds.token_uri,
-                        "client_id":     creds.client_id,
-                        "client_secret": creds.client_secret,
-                        "scopes":        creds.scopes,
-                    }
-                    ok = save_user_token(username, f"google_{svc}", creds_dict)
-                    if ok:
-                        logger.info(f"Saved {svc} token to Supabase for {username}")
-                    else:
-                        logger.warning(f"Could not save {svc} token for {username}")
+                if not creds:
+                    continue  # nothing to store for this service
+
+                creds_dict = {
+                    "token":         creds.token,
+                    "refresh_token": getattr(creds, "refresh_token", None),
+                    "token_uri":     creds.token_uri,
+                    "client_id":     creds.client_id,
+                    "client_secret": creds.client_secret,
+                    "scopes":        creds.scopes,
+                }
+
+                ok = save_user_token(username, f"google_{svc}", creds_dict)
+                if ok:
+                    logger.info(f"✅  Saved {svc} token to Supabase for {username}")
+                else:
+                    logger.warning(f"⚠️  Could NOT save {svc} token for {username}")
 
         except Exception as e:
             logger.error(f"Error while persisting Google tokens: {e}", exc_info=True)
