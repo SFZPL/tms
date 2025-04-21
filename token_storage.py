@@ -5,8 +5,10 @@ import streamlit as st
 from cryptography.fernet import Fernet
 import base64
 import os
+import time
+import traceback
 
-# Configure logging
+# Configure logging with more details
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -14,64 +16,123 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Function to get a secret from Streamlit secrets
-def get_secret(key, default=None):
-    """Simple version that doesn't import config.py"""
-    if key in st.secrets:
-        return st.secrets[key]
-    # Handle nested keys like "google.drive_parent_folder_id"
-    parts = key.split('.')
-    if len(parts) > 1:
-        current = st.secrets
-        for part in parts:
-            if part in current:
-                current = current[part]
-            else:
-                return default
-        return current
-    return default
+# Add console handler for easier debugging
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.INFO)
+logger.addHandler(console_handler)
 
-# Initialize Supabase client
-def get_supabase_client():
+def get_secret(key, default=None):
+    """Get a secret from Streamlit secrets with better error handling"""
     try:
-        from supabase import create_client
+        if key in st.secrets:
+            return st.secrets[key]
+        # Handle nested keys like "supabase.url"
+        parts = key.split('.')
+        if len(parts) > 1:
+            current = st.secrets
+            for part in parts:
+                if part in current:
+                    current = current[part]
+                else:
+                    logger.warning(f"Secret key part '{part}' not found in '{key}'")
+                    return default
+            return current
+        logger.warning(f"Secret key '{key}' not found")
+        return default
+    except Exception as e:
+        logger.error(f"Error accessing secret '{key}': {e}")
+        return default
+
+def get_supabase_client():
+    """Initialize Supabase client with improved error handling"""
+    try:
+        try:
+            from supabase import create_client
+        except ImportError:
+            logger.error("supabase-py package not installed. Run: pip install supabase-py")
+            return None, "supabase-py package not installed. Run: pip install supabase-py"
+            
         url = get_secret("supabase.url")
         key = get_secret("supabase.key")
-        return create_client(url, key)
+        
+        if not url or not key:
+            logger.error(f"Missing Supabase credentials: URL={bool(url)}, Key={bool(key)}")
+            return None, "Missing Supabase credentials in Streamlit secrets"
+            
+        client = create_client(url, key)
+        return client, None  # Return client and no error
     except Exception as e:
-        logger.error(f"Error initializing Supabase client: {e}")
-        return None
+        error_msg = f"Error initializing Supabase client: {str(e)}"
+        logger.error(error_msg)
+        logger.error(traceback.format_exc())
+        return None, error_msg
 
-# Get encryption key from secrets or generate a valid one
 def get_encryption_key():
+    """Get or generate encryption key with improved security"""
     key = get_secret("ENCRYPTION_KEY", None)
     if key:
-        # Use the key from secrets
-        return key.encode()
-    else:
-        # Generate a valid key if not provided
         try:
-            return base64.urlsafe_b64encode(os.urandom(32))
+            # Ensure key is properly formatted for Fernet
+            if isinstance(key, str):
+                if len(key) < 32:  # Minimum entropy needed
+                    logger.warning("Provided encryption key is too short, generating new one")
+                    return base64.urlsafe_b64encode(os.urandom(32))
+                    
+                # Try to decode the key to see if it's valid base64
+                try:
+                    base64.urlsafe_b64decode(key.encode())
+                    return key.encode()
+                except:
+                    # If not valid base64, encode it properly
+                    return base64.urlsafe_b64encode(key.encode()[:32].ljust(32, b'\0'))
+            else:
+                # Already bytes
+                return base64.urlsafe_b64encode(key[:32].ljust(32, b'\0'))
         except Exception as e:
-            logger.error(f"Error generating encryption key: {e}")
-            # Provide a valid fallback key (NOT FOR PRODUCTION)
-            return b'lzNiipUzCgW4sESOHWaBmE5w8ACMb7DBIP3U0wpzCuQ='
+            logger.error(f"Error processing encryption key: {e}")
+            
+    # Generate a new key
+    try:
+        return base64.urlsafe_b64encode(os.urandom(32))
+    except Exception as e:
+        logger.error(f"Error generating encryption key: {e}")
+        # Only use fallback in extreme cases
+        return b'lzNiipUzCgW4sESOHWaBmE5w8ACMb7DBIP3U0wpzCuQ='
 
-# Initialize Fernet with a valid key
-ENCRYPTION_KEY = get_encryption_key()
-cipher_suite = Fernet(ENCRYPTION_KEY)
+# Initialize encryption with better error handling
+try:
+    ENCRYPTION_KEY = get_encryption_key()
+    cipher_suite = Fernet(ENCRYPTION_KEY)
+    logger.info("Encryption initialized successfully")
+except Exception as e:
+    logger.error(f"Error initializing encryption: {e}")
+    # Create a fallback that will at least not crash but log errors
+    class FallbackFernet:
+        def encrypt(self, data):
+            logger.error("Using fallback encryption (NOT SECURE)")
+            return base64.b64encode(data)
+        def decrypt(self, data):
+            logger.error("Using fallback decryption (NOT SECURE)")
+            return base64.b64decode(data)
+    cipher_suite = FallbackFernet()
 
 def encrypt_token(token_data):
-    """Encrypt token data before storing in database"""
+    """Encrypt token data with better error handling"""
     if not token_data:
+        logger.warning("No token data to encrypt")
         return None
-    token_json = json.dumps(token_data)
-    encrypted_data = cipher_suite.encrypt(token_json.encode())
-    return encrypted_data.decode()
+    try:
+        token_json = json.dumps(token_data)
+        encrypted_data = cipher_suite.encrypt(token_json.encode())
+        return encrypted_data.decode()
+    except Exception as e:
+        logger.error(f"Error encrypting token: {e}")
+        return None
 
 def decrypt_token(encrypted_token):
-    """Decrypt token data retrieved from database"""
+    """Decrypt token data with better error handling"""
     if not encrypted_token:
+        logger.warning("No encrypted token to decrypt")
         return None
     try:
         decrypted_data = cipher_suite.decrypt(encrypted_token.encode())
@@ -80,15 +141,18 @@ def decrypt_token(encrypted_token):
         logger.error(f"Error decrypting token: {e}")
         return None
 
-# Add this to your save_user_token function
 def save_user_token(username, service, token_data):
-    """Save a user's OAuth token to Supabase"""
+    """Save a user's OAuth token with comprehensive error handling"""
     try:
         logger.info(f"Starting save_user_token for username={username}, service={service}")
         
-        supabase = get_supabase_client()
+        if not username or not service:
+            logger.error(f"Invalid parameters: username={username}, service={service}")
+            return False
+            
+        supabase, error = get_supabase_client()
         if not supabase:
-            logger.error("Failed to initialize Supabase client")
+            logger.error(f"Failed to initialize Supabase client: {error}")
             return False
             
         logger.info("Supabase client initialized successfully")
@@ -103,17 +167,23 @@ def save_user_token(username, service, token_data):
         # Check if token already exists
         try:
             response = supabase.table("oauth_tokens").select("*").eq("username", username).eq("service", service).execute()
-            logger.info(f"Query result: {response.data}")
-        except Exception as e:
-            logger.error(f"Error checking for existing token: {e}")
-            return False
             
-        try:
+            if hasattr(response, 'error') and response.error:
+                logger.error(f"Query error: {response.error.message}")
+                return False
+                
+            logger.info(f"Query result: Found {len(response.data)} existing records")
+            
             if response.data:
                 # Update existing record
                 logger.info(f"Updating existing token for {username}/{service}")
                 result = supabase.table("oauth_tokens").update({"token": encrypted_token}).eq("username", username).eq("service", service).execute()
-                logger.info(f"Update result: {result}")
+                
+                if hasattr(result, 'error') and result.error:
+                    logger.error(f"Update error: {result.error.message}")
+                    return False
+                    
+                logger.info(f"Update successful: {len(result.data)} records affected")
             else:
                 # Insert new record
                 logger.info(f"Inserting new token for {username}/{service}")
@@ -122,31 +192,121 @@ def save_user_token(username, service, token_data):
                     "service": service,
                     "token": encrypted_token
                 }).execute()
-                logger.info(f"Insert result: {result}")
+                
+                if hasattr(result, 'error') and result.error:
+                    logger.error(f"Insert error: {result.error.message}")
+                    return False
+                    
+                logger.info(f"Insert successful: {len(result.data)} records created")
             
             logger.info(f"Saved {service} token for user {username}")
             return True
         except Exception as e:
-            logger.error(f"Error saving to database: {e}", exc_info=True)
+            logger.error(f"Error in Supabase operation: {e}")
+            logger.error(traceback.format_exc())
             return False
     except Exception as e:
-        logger.error(f"Error in save_user_token: {e}", exc_info=True)
+        logger.error(f"Error in save_user_token: {e}")
+        logger.error(traceback.format_exc())
         return False
 
 def get_user_token(username, service):
-    """Retrieve a user's OAuth token from Supabase"""
+    """Retrieve a user's OAuth token with better error handling"""
     try:
-        supabase = get_supabase_client()
+        logger.info(f"Getting token for username={username}, service={service}")
+        
+        if not username or not service:
+            logger.error(f"Invalid parameters: username={username}, service={service}")
+            return None
+            
+        supabase, error = get_supabase_client()
         if not supabase:
-            logger.error("Failed to initialize Supabase client")
+            logger.error(f"Failed to initialize Supabase client: {error}")
             return None
             
         response = supabase.table("oauth_tokens").select("token").eq("username", username).eq("service", service).execute()
         
+        if hasattr(response, 'error') and response.error:
+            logger.error(f"Query error: {response.error.message}")
+            return None
+            
+        logger.info(f"Query result: Found {len(response.data)} records")
+        
         if response.data:
             encrypted_token = response.data[0]["token"]
-            return decrypt_token(encrypted_token)
-        return None
+            token_data = decrypt_token(encrypted_token)
+            if token_data:
+                logger.info(f"Successfully retrieved and decrypted token")
+                return token_data
+            else:
+                logger.error("Failed to decrypt token")
+                return None
+        else:
+            logger.info(f"No token found for {username}/{service}")
+            return None
     except Exception as e:
-        logger.error(f"Error retrieving token from Supabase: {e}")
+        logger.error(f"Error in get_user_token: {e}")
+        logger.error(traceback.format_exc())
         return None
+
+def test_supabase_connection():
+    """Test if Supabase connection is working"""
+    try:
+        logger.info("Testing Supabase connection...")
+        
+        # Get Supabase client
+        supabase, error = get_supabase_client()
+        if not supabase:
+            return False, f"Failed to initialize Supabase client: {error}"
+        
+        # Try to access the oauth_tokens table
+        try:
+            # First try a simple query that doesn't modify data
+            response = supabase.table("oauth_tokens").select("count").limit(1).execute()
+            
+            if hasattr(response, 'error') and response.error:
+                return False, f"Table query failed: {response.error.message}"
+                
+            logger.info("Read access to oauth_tokens table confirmed")
+            
+            # Now try a write operation with a test record
+            test_id = f"test_{int(time.time())}"
+            
+            # Test encryption
+            test_token = encrypt_token({"test": "data"})
+            if not test_token:
+                return False, "Encryption test failed"
+                
+            logger.info("Encryption test passed")
+            
+            # Insert test record
+            insert_result = supabase.table("oauth_tokens").insert({
+                "username": test_id,
+                "service": "test_service",
+                "token": test_token
+            }).execute()
+            
+            if hasattr(insert_result, 'error') and insert_result.error:
+                return False, f"Insert test failed: {insert_result.error.message}"
+                
+            logger.info("Insert test passed")
+            
+            # Clean up the test record
+            delete_result = supabase.table("oauth_tokens").delete().eq("username", test_id).execute()
+            
+            if hasattr(delete_result, 'error') and delete_result.error:
+                logger.warning(f"Cleanup failed: {delete_result.error.message}")
+            else:
+                logger.info("Cleanup successful")
+                
+            return True, "Connection test successful! Read, write, and encryption all working."
+            
+        except Exception as e:
+            logger.error(f"Table operation error: {e}")
+            logger.error(traceback.format_exc())
+            return False, f"Table operation error: {str(e)}"
+            
+    except Exception as e:
+        logger.error(f"Connection test failed: {e}")
+        logger.error(traceback.format_exc())
+        return False, f"Connection test failed with error: {str(e)}"
