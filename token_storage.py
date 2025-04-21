@@ -22,27 +22,33 @@ console_handler.setLevel(logging.INFO)
 logger.addHandler(console_handler)
 
 def get_secret(key, default=None):
-    """Get a secret from Streamlit secrets with better error handling"""
-    try:
-        if key in st.secrets:
-            return st.secrets[key]
-        # Handle nested keys like "supabase.url"
-        parts = key.split('.')
-        if len(parts) > 1:
-            current = st.secrets
-            for part in parts:
-                if part in current:
-                    current = current[part]
-                else:
-                    logger.warning(f"Secret key part '{part}' not found in '{key}'")
-                    return default
-            return current
-        logger.warning(f"Secret key '{key}' not found")
-        return default
-    except Exception as e:
-        logger.error(f"Error accessing secret '{key}': {e}")
-        return default
-
+    """Improved secret access with debug output"""
+    print(f"Attempting to access secret: {key}")
+    
+    # Direct access first
+    if key in st.secrets:
+        print(f"Found secret '{key}' via direct access")
+        return st.secrets[key]
+    
+    # Check for nested keys
+    parts = key.split('.')
+    if len(parts) > 1:
+        current = st.secrets
+        for part in parts:
+            if part in current:
+                current = current[part]
+            else:
+                print(f"Nested key part '{part}' not found in '{key}'")
+                return default
+        print(f"Found secret '{key}' via nested access")
+        return current
+        
+    # Debug output of available keys (not showing values for security)
+    available_keys = list(st.secrets.keys())
+    print(f"Available top-level secret keys: {available_keys}")
+    
+    print(f"Secret key '{key}' not found in available keys")
+    return default
 def get_supabase_client():
     """Initialize Supabase client with improved error handling"""
     try:

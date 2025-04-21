@@ -11,6 +11,7 @@ from pathlib import Path
 import logging
 from typing import Dict, List, Tuple, Optional, Any, Union
 from config import get_secret
+import traceback
 
 # In app.py, add a try/except block around the debug_utils import
 try:
@@ -234,8 +235,167 @@ def render_sidebar():
                 if st.button("System Debug Dashboard"):
                     st.session_state.debug_mode = "system_debug"
                     st.rerun()
+                    
+                # Authentication debugging
+                if st.button("Auth Debug Dashboard"):
+                    st.session_state.debug_mode = "auth_debug"
+                    st.rerun()
+            
+            # Add Authentication Debug Section
+            st.markdown("---")
+            st.subheader("Quick Debug")
+            
+            # Test Supabase Connection
+            if st.button("Test Supabase"):
+                try:
+                    from token_storage import get_supabase_client
+                    client = get_supabase_client()
+                    if client:
+                        try:
+                            response = client.table("oauth_tokens").select("count").limit(1).execute()
+                            st.success("✅ Supabase connection OK")
+                        except Exception as e:
+                            st.error(f"❌ Table error: {str(e)}")
+                    else:
+                        st.error("❌ Supabase client creation failed")
+                except Exception as e:
+                    st.error(f"❌ Error: {str(e)}")
+            
+            # Check Encryption
+            if st.button("Test Encryption"):
+                try:
+                    from token_storage import get_encryption_key, encrypt_token, decrypt_token
+                    key = get_encryption_key()
+                    if key:
+                        test_data = {"test": "data"}
+                        encrypted = encrypt_token(test_data)
+                        if encrypted:
+                            decrypted = decrypt_token(encrypted)
+                            if decrypted == test_data:
+                                st.success("✅ Encryption working")
+                            else:
+                                st.error("❌ Decryption failed")
+                        else:
+                            st.error("❌ Encryption failed")
+                    else:
+                        st.error("❌ No encryption key")
+                except Exception as e:
+                    st.error(f"❌ Error: {str(e)}")
+            
+            # Reset Google Auth
+            if st.button("Reset Google Auth"):
+                keys = ["google_gmail_creds", "google_drive_creds", "gmail_auth_complete", 
+                        "drive_auth_complete", "google_auth_complete"]
+                for key in keys:
+                    if key in st.session_state:
+                        del st.session_state[key]
+                st.success("Auth state reset")
+                st.rerun()
+        
         st.markdown("---")
         st.caption("© 2025 Task Management System")
+
+def auth_debug_page():
+    """Dashboard for authentication debugging"""
+    st.title("Authentication Debug Dashboard")
+    
+    # Basic Authentication Info
+    st.subheader("Authentication Status")
+    
+    # Display current authentication state
+    auth_state = {
+        "Logged In": st.session_state.get("logged_in", False),
+        "Username": st.session_state.get("user", {}).get("username", "None"),
+        "Gmail Auth Complete": st.session_state.get("gmail_auth_complete", False),
+        "Drive Auth Complete": st.session_state.get("drive_auth_complete", False),
+        "Google Auth Complete": st.session_state.get("google_auth_complete", False),
+        "Gmail Credentials Present": "google_gmail_creds" in st.session_state,
+        "Drive Credentials Present": "google_drive_creds" in st.session_state
+    }
+    
+    for key, value in auth_state.items():
+        st.write(f"**{key}:** {value}")
+    
+    # Supabase Testing
+    st.subheader("Supabase Connection Test")
+    
+    if st.button("Test Supabase Connection"):
+        try:
+            from token_storage import get_supabase_client
+            client = get_supabase_client()
+            if client:
+                try:
+                    response = client.table("oauth_tokens").select("count").limit(1).execute()
+                    st.success("✅ Supabase connection successful")
+                    st.json(response.data)
+                except Exception as e:
+                    st.error(f"❌ Table error: {str(e)}")
+            else:
+                st.error("❌ Supabase client creation failed")
+        except Exception as e:
+            st.error(f"❌ Error: {str(e)}")
+    
+    # Test encryption
+    st.subheader("Encryption Test")
+    
+    if st.button("Test Encryption System"):
+        try:
+            from token_storage import get_encryption_key, encrypt_token, decrypt_token
+            
+            # Get encryption key
+            key = get_encryption_key()
+            if key:
+                st.success(f"✅ Encryption key found (length: {len(key)})")
+                
+                # Test encryption/decryption
+                test_data = {"test": "data", "time": str(time.time())}
+                st.write("Test data:", test_data)
+                
+                encrypted = encrypt_token(test_data)
+                if encrypted:
+                    st.success(f"✅ Encryption successful")
+                    st.text(f"Encrypted data preview: {encrypted[:50]}...")
+                    
+                    decrypted = decrypt_token(encrypted)
+                    if decrypted == test_data:
+                        st.success("✅ Decryption successful")
+                        st.write("Decrypted data:", decrypted)
+                    else:
+                        st.error("❌ Decryption failed or mismatched")
+                        st.write("Decrypted data:", decrypted)
+                else:
+                    st.error("❌ Encryption failed")
+            else:
+                st.error("❌ No encryption key found")
+                secrets_keys = list(st.secrets.keys())
+                st.write("Available secret keys:", secrets_keys)
+        except Exception as e:
+            st.error(f"❌ Error: {str(e)}")
+            st.code(traceback.format_exc())
+    
+    # Google Auth Actions
+    st.subheader("Google Authentication Actions")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("Reset Google Auth State"):
+            keys = ["google_gmail_creds", "google_drive_creds", 
+                    "gmail_auth_complete", "drive_auth_complete", "google_auth_complete"]
+            for key in keys:
+                if key in st.session_state:
+                    del st.session_state[key]
+            st.success("Google authentication state reset")
+            st.rerun()
+    
+    with col2:
+        if st.button("Start Google Auth Process"):
+            st.session_state.show_google_auth = True
+            st.rerun()
+    
+    # Add ability to return to normal mode
+    if st.button("Return to Normal Mode"):
+        st.session_state.pop("debug_mode", None)
+        st.rerun()        
 # -------------------------------
 # 1) LOGIN PAGE
 # -------------------------------
@@ -2657,6 +2817,9 @@ def main():
             st.session_state.pop("show_google_auth", None)
             st.rerun()
         return
+    # In your main() function, add:
+    elif st.session_state.get("debug_mode") == "auth_debug":
+        auth_debug_page()
     
     # Check for debug mode
     if "debug_mode" in st.session_state:

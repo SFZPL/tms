@@ -314,15 +314,13 @@ def handle_oauth_callback(code):
             st.session_state["google_drive_creds"] = creds
             
             # Import and save to Supabase
+            print("SAVING TOKEN TO SUPABASE - DIRECT TEST")
             try:
                 from token_storage import save_user_token
                 
-                # Extract username from session state
                 if "user" in st.session_state and st.session_state.user:
                     username = st.session_state.user.get("username")
                     if username:
-                        logger.info(f"Attempting to save tokens for user: {username}")
-                        
                         # Convert credentials to serializable format
                         creds_dict = {
                             'token': creds.token,
@@ -333,20 +331,23 @@ def handle_oauth_callback(code):
                             'scopes': creds.scopes
                         }
                         
-                        # Log token info (without sensitive data)
-                        logger.info(f"Token info - has token: {'token' in creds_dict}, has refresh_token: {'refresh_token' in creds_dict}")
+                        # Direct save attempt - add custom print statements
+                        print(f"Token saving attempt for {username}/google_gmail")
+                        result = save_user_token(username, "google_gmail", creds_dict)
+                        print(f"Save result: {result}")
                         
-                        # Save tokens
-                        gmail_saved = save_user_token(username, "google_gmail", creds_dict)
-                        drive_saved = save_user_token(username, "google_drive", creds_dict)
-                        
-                        logger.info(f"Token save results - Gmail: {gmail_saved}, Drive: {drive_saved}")
+                        # Also save for Drive
+                        print(f"Token saving attempt for {username}/google_drive")
+                        result = save_user_token(username, "google_drive", creds_dict)
+                        print(f"Save result: {result}")
                     else:
-                        logger.error("Username not found in session state")
+                        print("ERROR: Username not found in session state")
                 else:
-                    logger.error("User information not found in session state")
+                    print("ERROR: User information not found in session state")
             except Exception as e:
-                logger.error(f"Error saving tokens to database: {e}", exc_info=True)
+                print(f"ERROR saving token: {str(e)}")
+                import traceback
+                print(traceback.format_exc())
             
             logger.info("Google authentication successful")
             return True
