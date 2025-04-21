@@ -29,66 +29,91 @@ ODOO_PASSWORD = get_secret("ODOO_PASSWORD")
 OdooConnection = Tuple[int, xmlrpc.client.ServerProxy]
 OdooRecord = Dict[str, Any]
 
+# helpers.py
+# ------------------------------------------------------------
+# Odoo connection helper
+# ------------------------------------------------------------
 @st.cache_resource(show_spinner=False)
-def get_odoo_connection(force_refresh=False):
+def get_odoo_connection(force_refresh: bool = False):
     """
-    Creates and returns a connection to the Odoo API with improved handling
-    
-    Args:
-        force_refresh: Force a new connection even if cached
-    
-    Returns:
-        Tuple of (uid, models) or (None, None) if failed
+    Create (or return) a cached XML‑RPC connection to Odoo.
+
+    Args
+    ----
+    force_refresh : bool
+        When True, always build a new connection even if one is cached.
+
+    Returns
+    -------
+    Tuple[int, xmlrpc.client.ServerProxy] |
+        (uid, models) on success
+        (None, None)  on failure
     """
-    # Check if we need to create a new connection
-    if force_refresh or "odoo_connection" not in st.session_state:
-        try:
-            logger.info("Establishing new Odoo connection")
-            
-            # Connect to Odoo
-            common = xmlrpc.client.ServerProxy(f"{ODOO_URL}/xmlrpc/2/common")
-            
-            # Add timeout for better error handling
-            uid = common.authenticate(ODOO_DB, ODOO_USERNAME, ODOO_PASSWORD, {})
-            
-            if not uid:
-                logger.error("Odoo authentication failed - invalid credentials or server issue")
-                return None, None
-                
-            # Create models proxy
-            models = xmlrpc.client.ServerProxy(f"{ODOO_URL}/xmlrpc/2/object")
-            
-            # Store connection with timestamp
-            st.session_state.odoo_connection = {
-                "uid": uid,
-                "models": models,
-                "timestamp": datetime.now()
-            }
-            logger.info(f"Successfully connected to Odoo (UID: {uid})")
-            
-            return uid, models
-            
-        except xmlrpc.client.Fault as e:
-            logger.error(f"Odoo XML-RPC Fault: {e}", exc_info=True)
+    from datetime import datetime, timedelta
+    import xmlrpc.client
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    # --------------------------------------------------------
+    # 1)  Return cached connection unless forced or expired
+    # --------------------------------------------------------
+    if (
+        not force_refresh
+        and "odoo_connection" in st.session_state
+    ):
+        conn = st.session_state.odoo_connection
+        # refresh if older than 1 h
+        if (datetime.now() - conn["timestamp"]) < timedelta(hours=1):
+            return conn["uid"], conn["models"]
+
+    # --------------------------------------------------------
+    # 2)  Build a fresh connection
+    # --------------------------------------------------------
+    try:
+        logger.info("Establishing new Odoo XML‑RPC connection")
+
+        # common proxy (for authenticate)
+        common = xmlrpc.client.ServerProxy(
+            f"{ODOO_URL}/xmlrpc/2/common",
+            allow_none=True
+        )
+
+        uid = common.authenticate(
+            ODOO_DB,
+            ODOO_USERNAME,
+            ODOO_PASSWORD,
+            {}
+        )
+        if not uid:
+            logger.error("Odoo authentication failed – check credentials")
             return None, None
-        except xmlrpc.client.ProtocolError as e:
-            logger.error(f"Odoo Protocol Error: {e}", exc_info=True)
-            return None, None
-        except Exception as e:
-            logger.error(f"Odoo Connection Error: {e}", exc_info=True)
-            return None, None
-    else:
-        # Check if connection is expired (over 1 hour old)
-        connection = st.session_state.odoo_connection
-        time_diff = datetime.now() - connection["timestamp"]
-        
-        if time_diff.total_seconds() > 3600:  # 1 hour
-            logger.info("Odoo connection expired, refreshing")
-            # Clear and recursively call to refresh
-            st.session_state.pop("odoo_connection", None)
-            return get_odoo_connection()
-        
-        return connection["uid"], connection["models"]
+
+        # models proxy (all subsequent calls)
+        models = xmlrpc.client.ServerProxy(
+            f"{ODOO_URL}/xmlrpc/2/object",
+            allow_none=True
+        )
+
+        # cache it
+        st.session_state.odoo_connection = {
+            "uid":       uid,
+            "models":    models,
+            "timestamp": datetime.now(),
+        }
+        logger.info(f"Odoo connection successful (UID {uid})")
+        return uid, models
+
+    except xmlrpc.client.Fault as e:
+        logger.error(f"Odoo XML‑RPC fault: {e}", exc_info=True)
+        return None, None
+    except xmlrpc.client.ProtocolError as e:
+        logger.error(f"Odoo protocol error: {e}", exc_info=True)
+        return None, None
+    except Exception as e:
+        logger.error(f"Odoo connection error: {e}", exc_info=True)
+        return None, None
+
 
 def check_odoo_connection():
     """
