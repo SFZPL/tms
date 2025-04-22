@@ -1,38 +1,76 @@
-import sys, os
-# if Streamlit shows your working dir as /mount/src/tms but your code lives in /mnt/data
+import os
+import sys
+
+# ─── Make sure local modules and the data folder are importable ─────────────────
+sys.path.append(os.path.dirname(__file__))  # /mount/src/tms on Streamlit Cloud
 sys.path.append("/mnt/data")
 
-import streamlit as st
+# ─── Standard library ─────────────────────────────────────────────────────────
+import logging
+import traceback
 import re
-import pandas as pd
-from datetime import datetime, date, time
 import uuid
 from pathlib import Path
-import logging
-from typing import Dict, List, Tuple, Optional, Any, Union
-from config import get_secret
-import traceback
+from datetime import datetime, date, time
+from typing import Any, Dict, List, Optional, Tuple, Union
 
-# In app.py, add a try/except block around the debug_utils import
+# ─── Third‑party ──────────────────────────────────────────────────────────────
+import streamlit as st
+import pandas as pd
+
+# ─── Local modules ───────────────────────────────────────────────────────────
+from config import get_secret
+
+# Debug util (graceful fallback if missing)
 try:
     from debug_utils import inject_debug_page, debug_function, SystemDebugger
 except ImportError:
-    # Create fallback versions or disable debugging
-    def inject_debug_page():
-        return False
-    def debug_function(func):
-        return func
+    def inject_debug_page(): return False
+    def debug_function(f): return f
     class SystemDebugger:
-        def __init__(self): pass
         def streamlit_debug_page(self): pass
 
-# Import these modules later in functions where they're needed, not at the top level
-# from google_drive import create_folder, get_folder_link, get_folder_url
-# import google_auth
-# from google_auth import handle_oauth_callback
+# Core helpers (all secrets now loaded inside these functions)
+from helpers import (
+    authenticate_odoo,
+    create_odoo_task,
+    get_sales_orders,
+    get_sales_order_details,
+    get_employee_schedule,
+    create_task,
+    find_employee_id,
+    get_target_languages_odoo,
+    get_guidelines_odoo,
+    get_client_success_executives_odoo,
+    get_service_category_1_options,
+    get_service_category_2_options,
+    get_all_employees_in_planning,
+    find_earliest_available_slot,
+    get_companies,
+    get_retainer_projects,
+    get_retainer_customers,
+    get_project_id_by_name,
+    update_task_designer,
+    get_odoo_connection,
+    check_odoo_connection
+)
+from gmail_integration import get_gmail_service, fetch_recent_emails
+from azure_llm import analyze_email
+from designer_selector import (
+    load_designers,
+    suggest_best_designer,
+    suggest_best_designer_available,
+    filter_designers_by_availability,
+    rank_designers_by_skill_match
+)
 
-from datetime import datetime
-
+# ─── Logging ─────────────────────────────────────────────────────────────────
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(name)s [%(levelname)s] %(message)s",
+    filename="app.log"
+)
+logger = logging.getLogger(__name__)
 
 def add_debug_sidebar(debugger: SystemDebugger):
     """
@@ -82,47 +120,6 @@ ODOO_DB = get_secret("ODOO_DB")
 ODOO_USERNAME = get_secret("ODOO_USERNAME") 
 ODOO_PASSWORD = get_secret("ODOO_PASSWORD")
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    filename='app.log'
-)
-logger = logging.getLogger(__name__)
-
-# Import helpers
-from helpers import (
-    authenticate_odoo,
-    create_odoo_task,
-    get_sales_orders,
-    get_sales_order_details,
-    get_employee_schedule,
-    create_task,
-    find_employee_id,
-    get_target_languages_odoo,
-    get_guidelines_odoo,
-    get_client_success_executives_odoo,
-    get_service_category_1_options,
-    get_service_category_2_options,
-    get_all_employees_in_planning,
-    find_earliest_available_slot,
-    get_companies,
-    get_retainer_projects,
-    get_retainer_customers,
-    get_project_id_by_name,
-    update_task_designer,
-    get_odoo_connection,
-    check_odoo_connection
-)
-from gmail_integration import get_gmail_service, fetch_recent_emails
-from azure_llm import analyze_email
-from designer_selector import (
-    load_designers,
-    suggest_best_designer,
-    suggest_best_designer_available,
-    filter_designers_by_availability,
-    rank_designers_by_skill_match
-)
 
 # Set page config
 st.set_page_config(
@@ -291,7 +288,13 @@ def render_sidebar():
                     # mask passwords & tokens
                     pretty = v[:4]+"…"+v[-4:] if v and len(v) > 8 else v
                     st.write(f"**{k}** → {status} {f'({pretty})' if v else ''}")
-
+            if st.button("🔌 Test Odoo Connection"):
+                with st.spinner("Pinging Odoo…"):
+                    uid, _ = get_odoo_connection(force_refresh=True)
+                if uid:
+                    st.success(f"Odoo OK (UID {uid})")
+                else:
+                    st.error("Odoo connect FAILED – check console logs")
             # Reset Google Auth
             if st.button("Reset Google Auth"):
                 keys = ["google_gmail_creds", "google_drive_creds", "gmail_auth_complete", 
@@ -430,55 +433,59 @@ def auth_debug_page():
 
 def login_page():
     from session_manager import SessionManager
-    SessionManager.update_activity()  # Add this line
-    
-    # Create columns with the middle one wider for content
+
+    # Touch the session so we don’t expire mid‑login
+    SessionManager.update_activity()
+
+    # Center the form in the middle column
     col1, col2, col3 = st.columns([1, 2, 1])
-    
     with col2:
         st.title("Welcome")
         st.subheader("Login to Task Management System")
-        
+
         with st.form("login_form"):
             username = st.text_input("Username", key="username_input")
             password = st.text_input("Password", type="password", key="password_input")
             submit = st.form_submit_button("Login")
-            
-            if submit:
-                # 1) Basic form validation
-                if not (username and password):
-                    st.warning("Please enter both username and password.")
-                    return
 
-                valid_username = get_secret("APP_USERNAME", "admin")
-                valid_password = get_secret("APP_PASSWORD", "password")
+            if not submit:
+                return
 
-                if username != valid_username or password != valid_password:
-                    st.error("Invalid credentials. Please try again.")
-                    return
+            # 1) Require both fields
+            if not username or not password:
+                st.warning("Please enter both username and password.")
+                return
 
-                # 2) Streamlit‑app login succeeds → try Odoo
-                from session_manager import SessionManager
-                SessionManager.login(username, expiry_hours=8)
+            # 2) Validate app‑level credentials
+            valid_user = get_secret("APP_USERNAME", "admin")
+            valid_pass = get_secret("APP_PASSWORD", "password")
+            if username != valid_user or password != valid_pass:
+                st.error("Invalid credentials. Please try again.")
+                return
 
-                try:
-                    with st.spinner("Connecting to Odoo…"):
-                        uid, models = get_odoo_connection(force_refresh=True)
+            # 3) Log into Streamlit session
+            SessionManager.login(username, expiry_hours=8)
 
-                    if not uid:
-                        raise ValueError(
-                            "Odoo returned False for authenticate() – "
-                            "check DB name / user / password"
-                        )
+            # 4) Attempt Odoo authentication exactly once
+            try:
+                with st.spinner("Connecting to Odoo…"):
+                    uid, models = get_odoo_connection(force_refresh=True)
 
-                    st.success("Login successful!")
-                    st.rerun()
+                if not uid:
+                    # Explicit error if Odoo.authenticate returned False
+                    raise RuntimeError("authenticate() returned False")
 
-                except Exception as e:
-                    # Show exact message, log full traceback, and roll back the app login
-                    st.error(f"Odoo authentication failed: {e}")
-                    logger.exception("Login halted by Odoo error")
-                    SessionManager.logout()
+                # Success path
+                st.success("Login successful!")
+                st.rerun()
+
+            except Exception as e:
+                # Show full error, log stack trace, and rollback Streamlit login
+                st.error(f"Odoo authentication failed: {type(e).__name__}: {e}")
+                logger.exception("Odoo login error")
+                SessionManager.logout()
+                return
+
 
 # -------------------------------
 # 2) REQUEST TYPE SELECTION PAGE
