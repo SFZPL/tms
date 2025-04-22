@@ -241,7 +241,21 @@ def render_sidebar():
             # Add Authentication Debug Section
             st.markdown("---")
             st.subheader("Quick Debug")
-            
+            # In app.py, inside render_sidebar() or login_page():
+            if st.sidebar.button("🔌 Run Odoo RPC Test"):
+                import xmlrpc.client
+                url = get_secret("ODOO_URL") + "/xmlrpc/2/common"
+                try:
+                    uid = xmlrpc.client.ServerProxy(url).authenticate(
+                        get_secret("ODOO_DB"),
+                        get_secret("ODOO_USERNAME"),
+                        get_secret("ODOO_PASSWORD"),
+                        {}
+                    )
+                    st.sidebar.success(f"Odoo RPC OK  →  UID {uid}")
+                except Exception as e:
+                    st.sidebar.error(f"Odoo RPC failed: {e}")
+
             # Test Supabase Connection
             if st.button("Test Supabase"):
                 try:
