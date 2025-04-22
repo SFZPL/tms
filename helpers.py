@@ -8,6 +8,10 @@ from typing import Dict, List, Tuple, Optional, Any, Union
 from dotenv import load_dotenv
 from config import get_secret
 
+# helpers.py  (top)
+ODOO_URL = ODOO_DB = ODOO_USERNAME = ODOO_PASSWORD = None
+
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -19,11 +23,6 @@ logger = logging.getLogger(__name__)
 # Load environment variables
 load_dotenv()
 
-# Replace environment variables with secrets
-ODOO_URL = get_secret("ODOO_URL")
-ODOO_DB = get_secret("ODOO_DB")
-ODOO_USERNAME = get_secret("ODOO_USERNAME")
-ODOO_PASSWORD = get_secret("ODOO_PASSWORD")
 
 # Type definitions
 OdooConnection = Tuple[int, xmlrpc.client.ServerProxy]
@@ -33,47 +32,64 @@ OdooRecord = Dict[str, Any]
 # ------------------------------------------------------------
 # Odoo connection helper
 # ------------------------------------------------------------
+# helpers.py
+# ------------------------------------------------------------
+# Odoo connection helper (re‑worked)
+# ------------------------------------------------------------
 @st.cache_resource(show_spinner=False)
 def get_odoo_connection(force_refresh: bool = False):
     """
-    Create (or return) a cached XML‑RPC connection to Odoo.
+    Return a cached XML‑RPC connection to Odoo, or build a fresh
+    one if none exists / it expired / force_refresh=True.
 
-    Args
-    ----
-    force_refresh : bool
-        When True, always build a new connection even if one is cached.
+    The four credentials are fetched at *call time* so editing
+    Streamlit‑Cloud → Secrets reflects immediately without a
+    full redeploy.
 
     Returns
     -------
-    Tuple[int, xmlrpc.client.ServerProxy] |
-        (uid, models) on success
-        (None, None)  on failure
+    (uid, models) on success
+    (None, None)  on failure
     """
-    from datetime import datetime, timedelta
     import xmlrpc.client
+    from datetime import datetime, timedelta
     import logging
+    global ODOO_URL, ODOO_DB, ODOO_USERNAME, ODOO_PASSWORD
 
     logger = logging.getLogger(__name__)
 
-    # --------------------------------------------------------
-    # 1)  Return cached connection unless forced or expired
-    # --------------------------------------------------------
-    if (
-        not force_refresh
-        and "odoo_connection" in st.session_state
-    ):
+    # ────────────────────────────────────────────────────────
+    # 1)  Load credentials from st.secrets / env every call
+    # ────────────────────────────────────────────────────────
+    ODOO_URL      = get_secret("ODOO_URL")
+    ODOO_DB       = get_secret("ODOO_DB")
+    ODOO_USERNAME = get_secret("ODOO_USERNAME")
+    ODOO_PASSWORD = get_secret("ODOO_PASSWORD")
+
+    # Fail fast if any secret missing
+    missing = [k for k, v in [
+                ("ODOO_URL", ODOO_URL),
+                ("ODOO_DB", ODOO_DB),
+                ("ODOO_USERNAME", ODOO_USERNAME),
+                ("ODOO_PASSWORD", ODOO_PASSWORD)] if not v]
+    if missing:
+        logger.error(f"Missing Odoo secrets: {', '.join(missing)}")
+        return None, None
+
+    # ────────────────────────────────────────────────────────
+    # 2)  Serve cached connection unless forced / >1 h old
+    # ────────────────────────────────────────────────────────
+    if (not force_refresh) and ("odoo_connection" in st.session_state):
         conn = st.session_state.odoo_connection
-        # refresh if older than 1 h
         if (datetime.now() - conn["timestamp"]) < timedelta(hours=1):
             return conn["uid"], conn["models"]
 
-    # --------------------------------------------------------
-    # 2)  Build a fresh connection
-    # --------------------------------------------------------
+    # ────────────────────────────────────────────────────────
+    # 3)  Open a new XML‑RPC session
+    # ────────────────────────────────────────────────────────
     try:
         logger.info("Establishing new Odoo XML‑RPC connection")
 
-        # common proxy (for authenticate)
         common = xmlrpc.client.ServerProxy(
             f"{ODOO_URL}/xmlrpc/2/common",
             allow_none=True
@@ -86,16 +102,14 @@ def get_odoo_connection(force_refresh: bool = False):
             {}
         )
         if not uid:
-            logger.error("Odoo authentication failed – check credentials")
-            return None, None
+            raise ValueError("Odoo returned False for authenticate()")
 
-        # models proxy (all subsequent calls)
         models = xmlrpc.client.ServerProxy(
             f"{ODOO_URL}/xmlrpc/2/object",
             allow_none=True
         )
 
-        # cache it
+        # Cache for subsequent calls in the same Streamlit session
         st.session_state.odoo_connection = {
             "uid":       uid,
             "models":    models,
@@ -104,15 +118,13 @@ def get_odoo_connection(force_refresh: bool = False):
         logger.info(f"Odoo connection successful (UID {uid})")
         return uid, models
 
-    except xmlrpc.client.Fault as e:
-        logger.error(f"Odoo XML‑RPC fault: {e}", exc_info=True)
-        return None, None
     except xmlrpc.client.ProtocolError as e:
-        logger.error(f"Odoo protocol error: {e}", exc_info=True)
+        logger.error(f"Odoo protocol error {e.errcode}: {e.errmsg}", exc_info=True)
         return None, None
     except Exception as e:
         logger.error(f"Odoo connection error: {e}", exc_info=True)
         return None, None
+
 
 
 def check_odoo_connection():

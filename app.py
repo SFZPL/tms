@@ -281,7 +281,17 @@ def render_sidebar():
                         st.error("❌ No encryption key")
                 except Exception as e:
                     st.error(f"❌ Error: {str(e)}")
-            
+            # 📌 NEW: show the values the app *actually* sees (masked)
+            if st.button("Test Odoo secrets"):
+                from config import get_secret
+                vars_to_check = ["ODOO_URL", "ODOO_DB", "ODOO_USERNAME", "ODOO_PASSWORD"]
+                for k in vars_to_check:
+                    v = get_secret(k)
+                    status = "✅ set" if v else "❌ EMPTY"
+                    # mask passwords & tokens
+                    pretty = v[:4]+"…"+v[-4:] if v and len(v) > 8 else v
+                    st.write(f"**{k}** → {status} {f'({pretty})' if v else ''}")
+
             # Reset Google Auth
             if st.button("Reset Google Auth"):
                 keys = ["google_gmail_creds", "google_drive_creds", "gmail_auth_complete", 
@@ -435,28 +445,41 @@ def login_page():
             submit = st.form_submit_button("Login")
             
             if submit:
-                # Validate credentials
-                if username and password:
-                    valid_username = get_secret("APP_USERNAME", "admin")
-                    valid_password = get_secret("APP_PASSWORD", "password")
-                    
-                    if username == valid_username and password == valid_password:
-                        # Log in user and set session
-                        SessionManager.login(username, expiry_hours=8)
-                        
-                        # Set up Odoo connection on login
-                        with st.spinner("Connecting to Odoo..."):
-                            uid, models = get_odoo_connection(force_refresh=True)
-                            if uid and models:
-                                st.success("Login successful!")
-                                st.rerun()
-                            else:
-                                st.error("Connected to the application but Odoo authentication failed. Check Odoo connection.")
-                                SessionManager.logout()
-                    else:
-                        st.error("Invalid credentials. Please try again.")
-                else:
+                # 1) Basic form validation
+                if not (username and password):
                     st.warning("Please enter both username and password.")
+                    return
+
+                valid_username = get_secret("APP_USERNAME", "admin")
+                valid_password = get_secret("APP_PASSWORD", "password")
+
+                if username != valid_username or password != valid_password:
+                    st.error("Invalid credentials. Please try again.")
+                    return
+
+                # 2) Streamlit‑app login succeeds → try Odoo
+                from session_manager import SessionManager
+                SessionManager.login(username, expiry_hours=8)
+
+                try:
+                    with st.spinner("Connecting to Odoo…"):
+                        uid, models = get_odoo_connection(force_refresh=True)
+
+                    if not uid:
+                        raise ValueError(
+                            "Odoo returned False for authenticate() – "
+                            "check DB name / user / password"
+                        )
+
+                    st.success("Login successful!")
+                    st.rerun()
+
+                except Exception as e:
+                    # Show exact message, log full traceback, and roll back the app login
+                    st.error(f"Odoo authentication failed: {e}")
+                    logger.exception("Login halted by Odoo error")
+                    SessionManager.logout()
+
 # -------------------------------
 # 2) REQUEST TYPE SELECTION PAGE
 # -------------------------------

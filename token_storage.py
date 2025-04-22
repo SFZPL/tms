@@ -1,12 +1,9 @@
 # token_storage.py
-import json
-import logging
-import streamlit as st
+import json, logging, streamlit as st, base64, os, time, traceback
 from cryptography.fernet import Fernet
-import base64
-import os
-import time
-import traceback
+
+# ➜  NEW – pull the central helper instead of defining our own
+from config import get_secret
 
 # Configure logging with more details
 logging.basicConfig(
@@ -21,35 +18,37 @@ console_handler = logging.StreamHandler()
 console_handler.setLevel(logging.INFO)
 logger.addHandler(console_handler)
 
-def get_secret(key, default=None):
-    """Improved secret access with debug output"""
-    print(f"Attempting to access secret: {key}")
+# def get_secret(key, default=None):
+#     """Improved secret access with debug output"""
+#     print(f"Attempting to access secret: {key}")
     
-    # Direct access first
-    if key in st.secrets:
-        print(f"Found secret '{key}' via direct access")
-        return st.secrets[key]
+#     # Direct access first
+#     if key in st.secrets:
+#         print(f"Found secret '{key}' via direct access")
+#         return st.secrets[key]
     
-    # Check for nested keys
-    parts = key.split('.')
-    if len(parts) > 1:
-        current = st.secrets
-        for part in parts:
-            if part in current:
-                current = current[part]
-            else:
-                print(f"Nested key part '{part}' not found in '{key}'")
-                return default
-        print(f"Found secret '{key}' via nested access")
-        return current
+#     # Check for nested keys
+#     parts = key.split('.')
+#     if len(parts) > 1:
+#         current = st.secrets
+#         for part in parts:
+#             if part in current:
+#                 current = current[part]
+#             else:
+#                 print(f"Nested key part '{part}' not found in '{key}'")
+#                 return default
+#         print(f"Found secret '{key}' via nested access")
+#         return current
         
-    # Debug output of available keys (not showing values for security)
-    available_keys = list(st.secrets.keys())
-    print(f"Available top-level secret keys: {available_keys}")
+#     # Debug output of available keys (not showing values for security)
+#     available_keys = list(st.secrets.keys())
+#     print(f"Available top-level secret keys: {available_keys}")
     
-    print(f"Secret key '{key}' not found in available keys")
-    return default
+#     print(f"Secret key '{key}' not found in available keys")
+#     return default
 # In token_storage.py, modify get_supabase_client to return just the client:
+# ⬇︎  just above the function definition
+@st.cache_resource(show_spinner=False)
 def get_supabase_client():
     try:
         try:
@@ -70,32 +69,30 @@ def get_supabase_client():
     except Exception as e:
         logger.error(f"Error initializing Supabase client: {e}")
         return None
-def get_encryption_key():
-    """Get encryption key with proper error handling"""
-    try:
-        # Try to get key from secrets
-        key = get_secret("ENCRYPTION_KEY", None)
-        if key and isinstance(key, str):
-            # Ensure the key is properly formatted
-            try:
-                # Test if it's a valid Fernet key by attempting to create a cipher
-                test_key = key.encode()
-                Fernet(test_key)
-                return test_key
-            except Exception as e:
-                logger.warning(f"Invalid encryption key format: {e}")
-                # Continue to key generation
-        
-        # Generate a new key if none exists or invalid format
-        logger.warning("Generating new encryption key")
-        return Fernet.generate_key()
-        
-    except Exception as e:
-        logger.error(f"Error handling encryption key: {e}")
-        # Only use fallback in extreme cases
-        return b'lzNiipUzCgW4sESOHWaBmE5w8ACMb7DBIP3U0wpzCuQ='
 
-# Initialize encryption with better error handling
+def get_encryption_key() -> bytes:
+    """
+    Return a *single* Fernet key.  Must be set in Streamlit‑Cloud → Secrets
+    as ENCRYPTION_KEY.  If missing or malformed we raise – better to fail
+    loudly than save tokens we can never decrypt later.
+    """
+    try:
+        key = get_secret("ENCRYPTION_KEY")
+        if not key:
+            raise ValueError("ENCRYPTION_KEY missing in secrets")
+
+        # Validate format (should be 44‑char url‑safe Base64)
+        Fernet(key.encode())   # will raise if invalid
+        return key.encode()
+
+    except Exception as e:
+        # Crash the app startup; dev‑ops can add the key in secrets
+        logger.critical(f"Encryption key error: {e}")
+        raise
+
+# ────────────────────────────────────────────────────────────────────
+# Initialise the cipher_suite once, at import time:
+# ────────────────────────────────────────────────────────────────────
 try:
     ENCRYPTION_KEY = get_encryption_key()
     cipher_suite = Fernet(ENCRYPTION_KEY)
