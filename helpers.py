@@ -5,28 +5,38 @@ import pandas as pd
 from datetime import datetime
 import logging
 from typing import Dict, List, Tuple, Optional, Any, Union
-from dotenv import load_dotenv
+
+# ────────────────────────────────────────────────────────────
+# Only load .env in local dev, skip on Streamlit Cloud
+try:
+    if os.getenv("LOCAL_DEVELOPMENT", "False").lower() in ("true", "1"):
+        from dotenv import load_dotenv
+        load_dotenv()
+        logging.getLogger(__name__).info("Loaded .env for local development")
+except ImportError:
+    # python‐dotenv not installed in production — ignore
+    pass
+except Exception as e:
+    logging.getLogger(__name__).warning(f"Skipping load_dotenv(): {e}")
+# ────────────────────────────────────────────────────────────
+
 from config import get_secret
 
-# helpers.py  (top)
+# Initialize Odoo credential globals (populated at runtime)
 ODOO_URL = ODOO_DB = ODOO_USERNAME = ODOO_PASSWORD = None
-
 
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    filename='helpers.log'
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    filename="helpers.log"
 )
 logger = logging.getLogger(__name__)
 
-# Load environment variables
-load_dotenv()
-
-
 # Type definitions
 OdooConnection = Tuple[int, xmlrpc.client.ServerProxy]
-OdooRecord = Dict[str, Any]
+OdooRecord     = Dict[str, Any]
+
 
 # helpers.py
 # ------------------------------------------------------------
