@@ -2208,7 +2208,9 @@ def email_analysis_page():
                             body = email.get('body', '')
                             if len(body) > 200:
                                 st.markdown(f"**Content Preview:**\n{body[:200]}...")
-                                with st.expander("Show full content"):
+                                show_full = st.checkbox(f"Show full content for email {i+1}", key=f"show_full_{i}")
+                                if show_full:
+                                    st.markdown("**Full Content:**")
                                     st.markdown(body)
                             else:
                                 st.markdown(f"**Content:**\n{body}")
