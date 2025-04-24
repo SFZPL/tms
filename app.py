@@ -1253,11 +1253,11 @@ def finalize_adhoc_subtasks():
                             st.markdown(f"**📁 {subfolder_name}:** [Open Folder]({subfolder_info['link']})")
 
 
-                # Display a message to help user understand what's happening
-                st.info("Click the button below to proceed to designer selection, or you can view the task details in Odoo.")
-                if st.button("Proceed to Designer Selection", type="primary"):
-                    st.session_state.designer_selection = True  # This flag is already being checked elsewhere
-                    st.rerun()
+            # Display a message to help user understand what's happening
+            st.info("Click the button below to proceed to designer selection, or you can view the task details in Odoo.")
+            if st.button("Proceed to Designer Selection", type="primary"):
+                st.session_state.designer_selection = True  # This flag is already being checked elsewhere
+                st.rerun()
 
 
 
