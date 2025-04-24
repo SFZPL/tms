@@ -25,13 +25,14 @@ DEFAULT_DESIGNER_FILE = get_secret("DESIGNER_FILE", "Cleaned_Assignment_Guide.xl
 
 # Initialize OpenAI with API key from config
 try:
-    openai.api_key = get_secret("OPENAI_API_KEY")
+    from openai import OpenAI
+    client = OpenAI(api_key=get_secret("OPENAI_API_KEY"))
     # Default model if not specified in environment variables
     DEFAULT_MODEL = get_secret("OPENAI_MODEL", "gpt-3.5-turbo")
     logger.info(f"OpenAI initialized with default model: {DEFAULT_MODEL}")
 except Exception as e:
     logger.error(f"Error initializing OpenAI: {e}", exc_info=True)
-    openai.api_key = None
+    client = None
 
 def safe_api_call(func, *args, retries=3, delay=7, **kwargs):
     """
@@ -198,7 +199,7 @@ Designer Profiles (each line is: Name|Position|Tools|Outputs|Languages):
         
         # Make API call using older openai library syntax
         response = safe_api_call(
-            openai.ChatCompletion.create,
+            client.chat.completions.create,
             model=DEFAULT_MODEL,
             messages=[
                 {"role": "system", "content": system_prompt},
@@ -212,7 +213,7 @@ Designer Profiles (each line is: Name|Position|Tools|Outputs|Languages):
         )
         
         # Extract suggestion
-        suggestion = response.choices[0].message.content.strip()
+        suggestion = response.choices[0].message.content
         logger.info(f"Designer suggestion: {suggestion[:50]}...")
         return suggestion
         
@@ -335,7 +336,7 @@ Not Available Designer Profiles (each line: Name|Position|Tools|Outputs|Language
         
         # Make API call using older openai library syntax
         response = safe_api_call(
-            openai.ChatCompletion.create,
+            client.chat.completions.create,
             model=DEFAULT_MODEL,
             messages=[
                 {"role": "system", "content": system_prompt},
@@ -403,7 +404,7 @@ Designer Profiles (each line is: Name|Position|Tools|Outputs|Languages):
         
         # Make API call using older openai library syntax
         response = safe_api_call(
-            openai.ChatCompletion.create,
+            client.chat.completions.create,
             model=DEFAULT_MODEL,
             messages=[
                 {"role": "system", "content": system_prompt},

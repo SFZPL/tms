@@ -16,15 +16,15 @@ logger = logging.getLogger(__name__)
 # Load environment variables
 load_dotenv()
 
+# Replace current initialization
 try:
-    openai.api_key = get_secret("OPENAI_API_KEY")
-    # Default model if not specified in environment variables
-    DEFAULT_MODEL = get_secret("OPENAI_MODEL", "gpt-4")
+    from openai import OpenAI
+    client = OpenAI(api_key=get_secret("OPENAI_API_KEY"))
+    DEFAULT_MODEL = get_secret("OPENAI_MODEL", "gpt-4o")
     logger.info(f"OpenAI initialized with default model: {DEFAULT_MODEL}")
 except Exception as e:
     logger.error(f"Error initializing OpenAI: {e}", exc_info=True)
-    openai.api_key = None
-
+    client = None
 def analyze_email(email_text: str, model: str = None) -> dict:
     """
     Extracts relevant service request details from an email using OpenAI.
@@ -69,7 +69,7 @@ client, project, order_reference, services, deadline, requirements, service_cate
 If you can't find information for a field, leave it as an empty string."""
         
         # Make API call with older openai library syntax
-        response = openai.ChatCompletion.create(
+        response = client.chat.completions.create(
             model=model_to_use,
             messages=[
                 {"role": "system", "content": system_prompt},
@@ -138,7 +138,7 @@ Return your response in JSON format with the following structure:
 }"""
         
         # Make API call with older openai library syntax
-        response = openai.ChatCompletion.create(
+        response = client.chat.completions.create(
             model=model_to_use,
             messages=[
                 {"role": "system", "content": system_prompt},
@@ -195,7 +195,7 @@ Return your response in JSON format with the following structure:
 }"""
         
         # Make API call with older openai library syntax
-        response = openai.ChatCompletion.create(
+        response = client.chat.completions.create(
             model=model_to_use,
             messages=[
                 {"role": "system", "content": system_prompt},
