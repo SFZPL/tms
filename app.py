@@ -2197,6 +2197,7 @@ def email_analysis_page():
                     selected_thread = threads[selected_thread_id]
                 
                     # Show the thread content
+                    # For threaded emails (replace the existing code)
                     with st.expander("View Thread Content", expanded=True):
                         for i, email in enumerate(selected_thread):
                             st.markdown(f"### Email {i+1}")
@@ -2208,10 +2209,10 @@ def email_analysis_page():
                             body = email.get('body', '')
                             if len(body) > 200:
                                 st.markdown(f"**Content Preview:**\n{body[:200]}...")
-                                show_full = st.checkbox(f"Show full content for email {i+1}", key=f"show_full_{i}")
+                                # Replace nested expander with checkbox
+                                show_full = st.checkbox(f"Show full content for Email {i+1}", key=f"show_full_thread_{i}")
                                 if show_full:
-                                    st.markdown("**Full Content:**")
-                                    st.markdown(body)
+                                    st.markdown(f"**Full Content:**\n{body}")
                             else:
                                 st.markdown(f"**Content:**\n{body}")
                             
@@ -2301,6 +2302,7 @@ def email_analysis_page():
                     selected_email = recent_emails[selected_email_idx]
                     
                     # Show the selected email
+                    # For individual emails (replace the existing code)
                     with st.expander("View Email Content", expanded=True):
                         st.markdown(f"**From:** {selected_email.get('from', 'Unknown')}")
                         st.markdown(f"**Subject:** {selected_email.get('subject', 'No Subject')}")
@@ -2309,8 +2311,10 @@ def email_analysis_page():
                         body = selected_email.get('body', '')
                         if len(body) > 200:
                             st.markdown(f"**Content Preview:**\n{body[:200]}...")
-                            with st.expander("Show full content"):
-                                st.markdown(body)
+                            # Replace nested expander with checkbox
+                            show_full = st.checkbox("Show full content", key=f"show_full_email_{selected_email_idx}")
+                            if show_full:
+                                st.markdown(f"**Full Content:**\n{body}")
                         else:
                             st.markdown(f"**Content:**\n{body}")
                     
