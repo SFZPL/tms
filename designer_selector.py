@@ -8,6 +8,7 @@ from typing import List, Dict, Tuple, Optional, Any, Union
 from dotenv import load_dotenv
 import openai  # Import the entire openai module instead of OpenAI class
 from config import get_secret
+import inspect
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -23,15 +24,63 @@ load_dotenv()
 DATA_DIR = Path(get_secret("DATA_DIR", "."))
 DEFAULT_DESIGNER_FILE = get_secret("DESIGNER_FILE", "Cleaned_Assignment_Guide.xlsx")
 
-# Initialize OpenAI with API key from config
+# Add this after imports but before client initialization
+import inspect
+
+# Debug function to track OpenAI setup
+def debug_openai_setup():
+    logger.info("=" * 50)
+    logger.info("DEBUGGING OPENAI SETUP")
+    
+    # Check API key
+    api_key = get_secret("OPENAI_API_KEY")
+    if api_key:
+        logger.info(f"API key found, starts with: {api_key[:8]}...")
+        logger.info(f"API key length: {len(api_key)}")
+    else:
+        logger.error("NO API KEY FOUND!")
+    
+    # Check if OpenAI is installed
+    try:
+        logger.info(f"OpenAI module path: {inspect.getfile(openai)}")
+        if hasattr(openai, '__version__'):
+            logger.info(f"OpenAI version: {openai.__version__}")
+    except Exception as e:
+        logger.error(f"Error checking OpenAI module: {e}")
+    
+    logger.info("=" * 50)
+
+# Call this debug function
+debug_openai_setup()
+
+# Then update the client initialization try/except with more debugging:
 try:
-    from openai import OpenAI
-    client = OpenAI(api_key=get_secret("OPENAI_API_KEY"))
-    # Default model if not specified in environment variables
-    DEFAULT_MODEL = get_secret("OPENAI_MODEL", "gpt-3.5-turbo")
-    logger.info(f"OpenAI initialized with default model: {DEFAULT_MODEL}")
+    api_key = get_secret("OPENAI_API_KEY")
+    logger.info(f"Initializing OpenAI with key (first 8 chars): {api_key[:8]}...")
+    
+    # For OpenAI SDK v1.0+
+    try:
+        from openai import OpenAI
+        client = OpenAI(api_key=api_key)
+        logger.info("Successfully created OpenAI client with new SDK")
+        
+        # Test the client with a simple API call
+        try:
+            models = client.models.list()
+            logger.info(f"API test successful! Available models: {len(models.data)}")
+        except Exception as test_err:
+            logger.error(f"API test failed: {test_err}")
+    except ImportError:
+        # Fallback to older SDK
+        logger.info("New SDK import failed, trying older OpenAI SDK pattern")
+        openai.api_key = api_key
+        client = openai  # Use openai module directly as client
+        logger.info("Using older OpenAI SDK pattern")
+        
+    DEFAULT_MODEL = get_secret("OPENAI_MODEL", "gpt-4")
+    logger.info(f"Default model set to: {DEFAULT_MODEL}")
 except Exception as e:
-    logger.error(f"Error initializing OpenAI: {e}", exc_info=True)
+    logger.error(f"OpenAI initialization failed: {e}", exc_info=True)
     client = None
 
 def safe_api_call(func, *args, retries=3, delay=7, **kwargs):
@@ -152,6 +201,18 @@ def suggest_best_designer(request_info: str, designers_df: pd.DataFrame, max_des
     Returns:
         String with the best designer suggestion
     """
+
+    # Debug check
+    if not client:
+        logger.error("OpenAI client is None!")
+        return "Error: OpenAI API not available. Please check your configuration."
+    
+    # Add more debug info
+    if hasattr(client, 'api_key') and client.api_key:
+        logger.info(f"Client has API key (starts with): {client.api_key[:8]}...")
+    else:
+        logger.info("Client doesn't have direct api_key attribute")
+
     if not openai.api_key:
         logger.error("OpenAI API key not set")
         return "Error: OpenAI API not available. Please check your configuration."
