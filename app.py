@@ -2872,13 +2872,16 @@ def main():
             designer_selection_page()         # noqa: F821
         elif st.session_state.form_type == "Ad-hoc | Framework Projects":
             if "adhoc_parent_input_done" in st.session_state:
-                adhoc_subtask_page()          # noqa: F821
+                adhoc_subtask_page()
             elif "adhoc_sales_order_done" in st.session_state:
-                adhoc_parent_task_page()      # noqa: F821
+                if "email_analysis_done" in st.session_state:
+                    adhoc_parent_task_page()
+                else:
+                    email_analysis_page()
             elif "company_selection_done" in st.session_state:
-                sales_order_page()            # noqa: F821
+                sales_order_page()
             else:
-                company_selection_page()      # noqa: F821
+                company_selection_page()
         elif st.session_state.form_type == "Retainer Projects":
             if "retainer_parent_input_done" in st.session_state:
                 retainer_subtask_page()       # noqa: F821
