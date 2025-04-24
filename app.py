@@ -72,6 +72,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+
 def add_debug_sidebar(debugger: SystemDebugger):
     """
     Add a debug sidebar option to the existing sidebar
@@ -1254,9 +1255,11 @@ def finalize_adhoc_subtasks():
 
                 # Display a message to help user understand what's happening
                 st.info("Click the button below to proceed to designer selection, or you can view the task details in Odoo.")
+                if st.button("Proceed to Designer Selection", type="primary"):
+                    st.session_state.designer_selection = True  # This flag is already being checked elsewhere
+                    st.rerun()
 
-            # Instead of a button, simply show a message and set a flag to proceed
-            st.session_state.should_proceed_to_designer = True
+
 
     except Exception as e:
         st.error(f"An error occurred: {str(e)}")
