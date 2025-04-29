@@ -455,18 +455,18 @@ def type_selection_page():
     
     with col1:
         with st.container(border=True):
-            st.subheader("Ad-hoc / Framework Projects")
+            st.subheader("Via Sales Order")
             st.markdown("For one-time projects or framework tasks with subtasks.")
             if st.button("Create Ad-hoc Request", use_container_width=True):
-                st.session_state.form_type = "Ad-hoc | Framework Projects"
+                st.session_state.form_type = "Via Sales Order"
                 st.rerun()
     
     with col2:
         with st.container(border=True):
-            st.subheader("Retainer Projects")
+            st.subheader("Via Project")
             st.markdown("For ongoing projects with recurring tasks.")
             if st.button("Create Retainer Request", use_container_width=True):
-                st.session_state.form_type = "Retainer Projects"
+                st.session_state.form_type = "Via Project"
                 st.rerun()
                 
     # Recent activities section
@@ -506,7 +506,7 @@ def get_sales_order_lines(models, uid, sales_order_name):
 # 3A) SALES ORDER PAGE (Ad-hoc Step 1)
 # -------------------------------
 def sales_order_page():
-    st.title("Ad-hoc / Framework: Sales Order")
+    st.title("Via Sales Order: Select Sales Order")
     
     # Progress bar
     st.progress(50, text="Step 2 of 4: Select Sales Order")
@@ -567,30 +567,32 @@ def sales_order_page():
             ["(Manual Entry)"] + sales_order_options
         )
 
-        # Display auto-filled information or manual input fields
-        if selected_sales_order != "(Manual Entry)":
-            details = get_sales_order_details(models, uid, selected_sales_order)
-            parent_sales_order_item = details.get('sales_order', selected_sales_order)
-            customer = details.get('customer', "")
-            project = details.get('project', "")
-            
-            st.info(f"The following information will be auto-filled from the selected sales order:")
-            st.markdown(f"- **Sales Order Item:** {parent_sales_order_item}")
-            st.markdown(f"- **Customer:** {customer}")
-            st.markdown(f"- **Project:** {project}")
-        else:
-            parent_sales_order_item = st.text_input("Sales Order Item")
-            customer = st.text_input("Customer")
-            project = st.text_input("Project")
+        # We're not showing these fields anymore, but we need placeholder 
+        # variables that will hold the values later
+        parent_sales_order_item = None
+        customer = None
+        project = None
 
         submit = st.form_submit_button("Next")
         
         if submit:
-            # Validate inputs
-            if selected_sales_order == "(Manual Entry)" and (not parent_sales_order_item or not customer or not project):
-                st.error("Please fill in all required fields.")
-                return
+            # If a sales order is selected, get the details from Odoo
+            if selected_sales_order != "(Manual Entry)":
+                details = get_sales_order_details(models, uid, selected_sales_order)
+                parent_sales_order_item = details.get('sales_order', selected_sales_order)
+                customer = details.get('customer', "")
+                project = details.get('project', "")
                 
+                # For automatic sales order selection, we use the order name itself if no item specified
+                if not parent_sales_order_item:
+                    parent_sales_order_item = selected_sales_order
+            else:
+                # For manual entry, we use the selected_sales_order as the item name
+                # This removes the validation problem since we're not showing the fields to fill
+                parent_sales_order_item = "Manual Entry"
+                customer = "Manual Customer"
+                project = "Manual Project"
+            
             # Save to session state
             st.session_state.parent_sales_order_item = parent_sales_order_item
             st.session_state.customer = customer
@@ -2876,7 +2878,7 @@ def main():
         # Designer‑selection page shown after tasks are created
         if st.session_state.get("designer_selection"):
             designer_selection_page()         # noqa: F821
-        elif st.session_state.form_type == "Ad-hoc | Framework Projects":
+        elif st.session_state.form_type == "Via Sales Order":
             if "adhoc_parent_input_done" in st.session_state:
                 adhoc_subtask_page()
             elif "adhoc_sales_order_done" in st.session_state:
@@ -2888,7 +2890,7 @@ def main():
                 sales_order_page()
             else:
                 company_selection_page()
-        elif st.session_state.form_type == "Retainer Projects":
+        elif st.session_state.form_type == "Via Project":
             if "retainer_parent_input_done" in st.session_state:
                 retainer_subtask_page()       # noqa: F821
             else:
