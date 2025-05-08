@@ -388,7 +388,7 @@ def auth_debug_page():
 def login_page():
     from session_manager import SessionManager
 
-    # Touch the session so we don’t expire mid‑login
+    # Touch the session so we don't expire mid‑login
     SessionManager.update_activity()
 
     # Center the form in the middle column
@@ -410,10 +410,24 @@ def login_page():
                 st.warning("Please enter both username and password.")
                 return
 
-            # 2) Validate app‑level credentials
-            valid_user = get_secret("APP_USERNAME", "admin")
-            valid_pass = get_secret("APP_PASSWORD", "password")
-            if username != valid_user or password != valid_pass:
+            # 2) Validate against multiple user credentials
+            authenticated = False
+            
+            # First check the admin user (backward compatibility)
+            valid_admin_user = get_secret("APP_USERNAME", "admin")
+            valid_admin_pass = get_secret("APP_PASSWORD", "password")
+            if username == valid_admin_user and password == valid_admin_pass:
+                authenticated = True
+            
+            # Check additional users
+            for prefix in ["USER_karmel", "USER_abdelrauof"]:
+                user = get_secret(f"{prefix}_USERNAME")
+                pwd = get_secret(f"{prefix}_PASSWORD")
+                if username == user and password == pwd:
+                    authenticated = True
+                    break
+            
+            if not authenticated:
                 st.error("Invalid credentials. Please try again.")
                 return
 
@@ -616,7 +630,7 @@ def sales_order_page():
 # 3B) AD-HOC PARENT TASK PAGE (Ad-hoc Step 2)
 # -------------------------------
 def adhoc_parent_task_page():
-    st.title("Ad-hoc / Framework: Parent Task")
+    st.title("Via Sales Order: Parent Task")
     
     # Progress bar
     st.progress(80, text="Step 4 of 5: Parent Task Details")
@@ -780,7 +794,7 @@ def adhoc_parent_task_page():
 # 3C) AD-HOC SUBTASK PAGE (Ad-hoc Step 3)
 # -------------------------------
 def adhoc_subtask_page():
-    st.title("Ad-hoc / Framework: Subtasks")
+    st.title("Via Sales Order: Subtasks")
     
     # Progress bar
     st.progress(100, text="Step 5 of 5: Subtask Details")
@@ -1270,7 +1284,7 @@ def finalize_adhoc_subtasks():
 # RETAINER FLOW
 # -------------------------------
 def retainer_parent_task_page():
-    st.title("Retainer Project: Parent Task")
+    st.title("Via Project: Parent Task")
     
     # Progress bar
     st.progress(80, text="Step 3 of 4: Parent Task Details")
@@ -1393,7 +1407,7 @@ def retainer_parent_task_page():
             st.rerun()
 
 def retainer_subtask_page():
-    st.title("Retainer Project: Subtask")
+    st.title("Via Project: Subtask")
     
     # Progress bar
     st.progress(100, text="Step 4 of 4: Subtask Details")
