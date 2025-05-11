@@ -20,9 +20,44 @@ COLORS = {
 LOGO_BASE64 = "YOUR_BASE64_ENCODED_LOGO"
 
 def inject_custom_css():
-    """Inject custom CSS for consistent styling."""
+    """Inject custom CSS for consistent PrezLab styling."""
     css = """
     <style>
+    /* Fix for sidebar title alignment */
+    [data-testid="stSidebarNav"] {
+        padding-left: 0 !important;
+    }
+    
+    .st-emotion-cache-16txtl3 h1, 
+    .st-emotion-cache-16txtl3 h2,
+    .st-emotion-cache-16txtl3 h3,
+    [data-testid="stSidebarNav"] h1,
+    [data-testid="stSidebarNav"] h2,
+    [data-testid="stSidebarNav"] div:first-child {
+        padding-left: 1rem !important;
+        margin-left: 0 !important;
+    }
+
+    /* Change progress bar color to PrezLab navy */
+    .stProgress > div > div {
+        background-color: #2B1B4C !important;
+    }
+    
+    /* Target any progress elements */
+    progress {
+        color: #2B1B4C !important;
+    }
+    
+    /* For the specific workflow progress bar */
+    [data-testid="stAppViewBlockContainer"] div:has(> div > div > progress) {
+        background-color: #2B1B4C !important;
+    }
+    
+    /* Change the color of the progress bar in the workflow steps */
+    div[role="progressbar"] > div {
+        background-color: #2B1B4C !important;
+    }
+    
     /* Typography enhancements */
     h1, h2, h3, h4, h5, h6 {
         color: #2B1B4C !important;
@@ -35,15 +70,17 @@ def inject_custom_css():
         margin: 0 auto;
     }
     
-    /* Custom elements */
+    /* Custom containers */
     .prezlab-container {
         background-color: white;
         border-radius: 8px;
         padding: 1.5rem;
         border: 1px solid #EDEDED;
         margin: 1rem 0;
+        position: relative;
     }
     
+    /* Header styling with the coral point */
     .prezlab-header {
         border-bottom: 2px solid #FF6666;
         position: relative;
@@ -51,6 +88,7 @@ def inject_custom_css():
         margin-bottom: 1.5rem;
     }
     
+    /* The coral point element */
     .prezlab-point {
         position: absolute;
         right: -5px;
@@ -71,6 +109,55 @@ def inject_custom_css():
     .stButton button:hover {
         transform: translateY(-2px) !important;
         box-shadow: 0 4px 6px rgba(0,0,0,0.1) !important;
+    }
+    
+    /* Primary button styling */
+    .stButton.primary button {
+        background-color: #FF6666 !important;
+        color: white !important;
+    }
+    
+    /* Form styling */
+    div[data-testid="stForm"] {
+        background-color: #E4E3FF;
+        padding: 1.5rem;
+        border-radius: 8px;
+        border: 1px solid #EDEDED;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+    }
+    
+    /* Input field enhancements */
+    .stTextInput input, 
+    .stNumberInput input, 
+    .stDateInput input,
+    .stTextArea textarea {
+        border-radius: 4px !important;
+        border-color: #EDEDED !important;
+    }
+    
+    .stTextInput input:focus, 
+    .stNumberInput input:focus, 
+    .stDateInput input:focus,
+    .stTextArea textarea:focus {
+        border-color: #FF6666 !important;
+        box-shadow: 0 0 0 1px #FF666680 !important;
+    }
+    
+    /* Select box styling */
+    .stSelectbox [data-baseweb="select"] {
+        border-radius: 4px !important;
+    }
+    
+    /* Expander styling */
+    .streamlit-expander {
+        border-radius: 8px !important;
+        border-color: #EDEDED !important;
+    }
+    
+    /* Container border styling */
+    div[data-testid="stVerticalBlock"] > div[style*="border"] {
+        border-color: #EDEDED !important;
+        border-radius: 8px !important;
     }
     </style>
     """
@@ -254,3 +341,59 @@ def scribble(text, color=COLORS["coral"], style="underline"):
             """,
             unsafe_allow_html=True
         )
+
+def add_logo(logo_filename="PrezLab-Logos-02.png", width=150):
+    """Add a logo to the top right corner of the app using a relative path."""
+    import base64
+    from PIL import Image
+    import os
+    
+    try:
+        # Use the current directory
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        logo_path = os.path.join(current_dir, logo_filename)
+        
+        if os.path.exists(logo_path):
+            # Read the image file
+            img = Image.open(logo_path)
+            
+            # Create a holder for the image with right alignment
+            st.markdown(
+                f"""
+                <style>
+                .logo-container {{
+                    position: fixed;
+                    top: 20px;
+                    right: 30px;
+                    z-index: 1000;
+                }}
+                </style>
+                """,
+                unsafe_allow_html=True
+            )
+            
+            # Convert the image to base64
+            import io
+            buf = io.BytesIO()
+            img.save(buf, format="PNG")
+            byte_im = buf.getvalue()
+            encoded = base64.b64encode(byte_im).decode()
+            
+            # Display the image
+            st.markdown(
+                f"""
+                <div class="logo-container">
+                    <img src="data:image/png;base64,{encoded}" width="{width}">
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+            
+            # Save the encoded logo for future use
+            st.session_state.logo_base64 = encoded
+            
+        else:
+            print(f"Logo file not found at: {logo_path}")
+            
+    except Exception as e:
+        print(f"Error displaying logo: {e}")
