@@ -20,47 +20,39 @@ COLORS = {
 LOGO_BASE64 = "YOUR_BASE64_ENCODED_LOGO"
 
 def inject_custom_css():
-    """Inject custom CSS for consistent PrezLab styling without breaking layout."""
+    """Inject custom CSS for consistent PrezLab styling."""
     css = """
     <style>
-    /* CRITICAL FIX: Preserve Streamlit's layout structure */
-    /* These classes control the main layout - we must be very careful with them */
-    .main .block-container {
-        max-width: 100% !important;
-        padding-left: 5% !important;
-        padding-right: 5% !important;
-        padding-top: 1rem !important;
+    /* Center content when sidebar is collapsed */
+    .sidebar-collapsed .main .block-container {
+        max-width: 800px !important;
+        margin-left: auto !important;
+        margin-right: auto !important;
+        padding-left: 2rem !important;
+        padding-right: 2rem !important;
     }
     
-    /* Ensure sidebar stays in position */
-    [data-testid="stSidebar"] {
-        min-width: 300px !important;
-        max-width: 300px !important;
+    /* For the login page specifically - center the form */
+    [data-testid="stForm"] {
+        max-width: 450px !important;
+        margin-left: auto !important;
+        margin-right: auto !important;
     }
     
-    /* Fix sidebar content alignment */
-    [data-testid="stSidebar"] > div:first-child {
-        padding-left: 1.5rem;
-        padding-right: 1.5rem;
-    }
-    
-    /* Change progress bar color to PrezLab navy */
+    /* Keep your existing CSS styles below */
     .stProgress > div > div {
         background-color: #2B1B4C !important;
     }
     
-    /* Target any progress elements */
     progress {
         color: #2B1B4C !important;
     }
     
-    /* Typography enhancements */
     h1, h2, h3, h4, h5, h6 {
         color: #2B1B4C !important;
         font-weight: 600 !important;
     }
     
-    /* Button enhancements */
     .stButton button {
         border-radius: 4px !important;
         font-weight: 500 !important;
@@ -70,29 +62,6 @@ def inject_custom_css():
     .stButton button:hover {
         transform: translateY(-2px) !important;
         box-shadow: 0 4px 6px rgba(0,0,0,0.1) !important;
-    }
-    
-    /* Primary button styling */
-    .stButton.primary button {
-        background-color: #FF6666 !important;
-        color: white !important;
-    }
-    
-    /* Input field enhancements */
-    .stTextInput input, 
-    .stNumberInput input, 
-    .stDateInput input,
-    .stTextArea textarea {
-        border-radius: 4px !important;
-        border-color: #EDEDED !important;
-    }
-    
-    .stTextInput input:focus, 
-    .stNumberInput input:focus, 
-    .stDateInput input:focus,
-    .stTextArea textarea:focus {
-        border-color: #FF6666 !important;
-        box-shadow: 0 0 0 1px #FF666680 !important;
     }
     </style>
     """
