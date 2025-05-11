@@ -2824,8 +2824,15 @@ def main():
 
     inject_custom_css()
     # Base64 string is too long to include here directly
-    logo_base64 = "iVBORw0KGgoAAAANSUhEUgAABToAAAEHCAYAAACOf/mtAAAACXBIWXMAAC4jAAAuIwF4pT92AAAgAElEQVR4nO3dS27cVtrG8SeNzOUeNwFVj5uA1Ctw9bwJKStQeaShlRWYXkGUoUYurSAyagGhVtAqoOYpATX/XCvIN+BhRMm61IXkey7/HyA4SaflN3Lx8Jzn3H74888/BQAAAAAAAAAh+9G6AAAAAAC1PCtKSZ+s6+jZfxarWWVdBIBh5VkxlvS7dR09+7xYzUrrIoCU/c26..."  # Continue with your base64 string
-    def display_logo():
+    # After injecting custom CSS
+    try:
+        # Try to use the configured logo function first
+        add_logo("PrezLab-Logos-02.png", width=120)
+    except Exception as e:
+        print(f"Error adding logo from file: {e}")
+        # Fall back to direct HTML injection if there's any error
+        logo_base64 = "iVBORw0KGgoAAAANSUhEUgAABToAAAEHCAYAAACOf/mtAAAACXBIWXMAAC4jAAAuIwF4pT92AAAgAElEQVR4nO3dS27cVtrG8SeNzOUeNwFVj5uA1Ctw9bwJKStQeaShlRWYXkGUoYYurSAyagGhVtAqoOYpATX/XCvIN+BhRMm61IXkey7/HyA4SaflN3Lx8Jzn3H74888/BQAAAAAAAAAh+9G6AAAAAAC1PCtKSZ+s6+jZfxarWWVdBIBh5VkxlvS7dR09+7xYzUrrIoCU/c26AAAAAAAAAADYF0EnAAAAAAAAgOARdAIAAAAAAAAIHkEnAAAAAAAAgOARdAIAAAAAAAAIHkEnAAAAAAAAgOA..."  # Your full base64 string
+        
         st.markdown(
             f"""
             <style>
@@ -2842,8 +2849,6 @@ def main():
             """,
             unsafe_allow_html=True
         )
-    
-    display_logo()
     # ------------------------------------------------------------------
     # 1)  Capture *early* Google OAuth callback codes
     # ------------------------------------------------------------------
