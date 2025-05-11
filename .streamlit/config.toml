@@ -1,0 +1,9 @@
+[theme]
+# Primary PrezLab colors
+primaryColor = "#FF6666"        # Coral
+textColor = "#2B1B4C"           # Navy
+backgroundColor = "#FFFFFF"     # White
+secondaryBackgroundColor = "#E4E3FF"  # Light purple
+
+# Additional theme settings
+font = "sans-serif"
