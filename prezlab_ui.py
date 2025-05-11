@@ -28,15 +28,11 @@ def inject_custom_css():
     /* CRITICAL FIX: Preserve Streamlit's layout structure */
     /* These classes control the main layout - we must be very careful with them */
     .main .block-container {
-        /* control your maximum width */
-        max-width: 1000px !important;   
-        /* auto-margin centers the container */
-        margin: 0 auto !important;      
-        /* vertical breathing room */
-        padding-top: 1rem !important;   
-        padding-bottom: 1rem !important;
+        max-width: 100% !important;
+        padding-left: 5% !important;
+        padding-right: 5% !important;
+        padding-top: 1rem !important;
     }
-
     /* Ensure sidebar stays in position */
     [data-testid="stSidebar"] {
         min-width: 300px !important;
