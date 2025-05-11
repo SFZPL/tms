@@ -20,24 +20,30 @@ COLORS = {
 LOGO_BASE64 = "YOUR_BASE64_ENCODED_LOGO"
 
 def inject_custom_css():
-    """Inject custom CSS for consistent PrezLab styling."""
+    """Inject custom CSS for consistent PrezLab styling without breaking layout."""
     css = """
     <style>
-    /* Fix for sidebar title alignment */
-    [data-testid="stSidebarNav"] {
-        padding-left: 0 !important;
+    /* CRITICAL FIX: Preserve Streamlit's layout structure */
+    /* These classes control the main layout - we must be very careful with them */
+    .main .block-container {
+        max-width: 100% !important;
+        padding-left: 5% !important;
+        padding-right: 5% !important;
+        padding-top: 1rem !important;
     }
     
-    .st-emotion-cache-16txtl3 h1, 
-    .st-emotion-cache-16txtl3 h2,
-    .st-emotion-cache-16txtl3 h3,
-    [data-testid="stSidebarNav"] h1,
-    [data-testid="stSidebarNav"] h2,
-    [data-testid="stSidebarNav"] div:first-child {
-        padding-left: 1rem !important;
-        margin-left: 0 !important;
+    /* Ensure sidebar stays in position */
+    [data-testid="stSidebar"] {
+        min-width: 300px !important;
+        max-width: 300px !important;
     }
-
+    
+    /* Fix sidebar content alignment */
+    [data-testid="stSidebar"] > div:first-child {
+        padding-left: 1.5rem;
+        padding-right: 1.5rem;
+    }
+    
     /* Change progress bar color to PrezLab navy */
     .stProgress > div > div {
         background-color: #2B1B4C !important;
@@ -48,55 +54,10 @@ def inject_custom_css():
         color: #2B1B4C !important;
     }
     
-    /* For the specific workflow progress bar */
-    [data-testid="stAppViewBlockContainer"] div:has(> div > div > progress) {
-        background-color: #2B1B4C !important;
-    }
-    
-    /* Change the color of the progress bar in the workflow steps */
-    div[role="progressbar"] > div {
-        background-color: #2B1B4C !important;
-    }
-    
     /* Typography enhancements */
     h1, h2, h3, h4, h5, h6 {
         color: #2B1B4C !important;
         font-weight: 600 !important;
-    }
-    
-    /* Container styling */
-    .stApp {
-        max-width: 1200px;
-        margin: 0 auto;
-    }
-    
-    /* Custom containers */
-    .prezlab-container {
-        background-color: white;
-        border-radius: 8px;
-        padding: 1.5rem;
-        border: 1px solid #EDEDED;
-        margin: 1rem 0;
-        position: relative;
-    }
-    
-    /* Header styling with the coral point */
-    .prezlab-header {
-        border-bottom: 2px solid #FF6666;
-        position: relative;
-        padding-bottom: 0.5rem;
-        margin-bottom: 1.5rem;
-    }
-    
-    /* The coral point element */
-    .prezlab-point {
-        position: absolute;
-        right: -5px;
-        bottom: -5px;
-        width: 10px;
-        height: 10px;
-        border-radius: 50%;
-        background-color: #FF6666;
     }
     
     /* Button enhancements */
@@ -117,15 +78,6 @@ def inject_custom_css():
         color: white !important;
     }
     
-    /* Form styling */
-    div[data-testid="stForm"] {
-        background-color: #E4E3FF;
-        padding: 1.5rem;
-        border-radius: 8px;
-        border: 1px solid #EDEDED;
-        box-shadow: 0 2px 10px rgba(0,0,0,0.05);
-    }
-    
     /* Input field enhancements */
     .stTextInput input, 
     .stNumberInput input, 
@@ -141,23 +93,6 @@ def inject_custom_css():
     .stTextArea textarea:focus {
         border-color: #FF6666 !important;
         box-shadow: 0 0 0 1px #FF666680 !important;
-    }
-    
-    /* Select box styling */
-    .stSelectbox [data-baseweb="select"] {
-        border-radius: 4px !important;
-    }
-    
-    /* Expander styling */
-    .streamlit-expander {
-        border-radius: 8px !important;
-        border-color: #EDEDED !important;
-    }
-    
-    /* Container border styling */
-    div[data-testid="stVerticalBlock"] > div[style*="border"] {
-        border-color: #EDEDED !important;
-        border-radius: 8px !important;
     }
     </style>
     """
