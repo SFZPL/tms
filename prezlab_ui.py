@@ -327,7 +327,7 @@ def add_logo(logo_filename="PrezLab-Logos-02.png", width=150, base64_string=None
                 <style>
                 .logo-container {{
                     position: fixed;
-                    top: 80px;
+                    top: 100px;
                     right: 30px;
                     z-index: 1000;
                 }}
