@@ -64,7 +64,7 @@ from designer_selector import (
     rank_designers_by_skill_match
 )
 
-from prezlab_ui import inject_custom_css, header, container, message, progress_steps, scribble
+from prezlab_ui import inject_custom_css, header, container, message, progress_steps, scribble, add_logo
 
 # ─── Logging ─────────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -2810,7 +2810,7 @@ def main():
     import streamlit as st
 
     inject_custom_css()
-
+    add_logo("PrezLab-Logos-02.png", width=120)
 
     # ------------------------------------------------------------------
     # 1)  Capture *early* Google OAuth callback codes
