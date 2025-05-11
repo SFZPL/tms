@@ -272,21 +272,55 @@ def scribble(text, color=COLORS["coral"], style="underline"):
             unsafe_allow_html=True
         )
 
-def add_logo(logo_filename="PrezLab-Logos-02.png", width=150):
-    """Add a logo to the top right corner of the app using a relative path."""
+def add_logo(logo_filename="PrezLab-Logos-02.png", width=150, base64_string=None):
+    """Add a logo to the top right corner of the app using a file or base64 string."""
     import base64
-    from PIL import Image
     import os
     
     try:
-        # Use the current directory
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        logo_path = os.path.join(current_dir, logo_filename)
+        encoded = None
         
-        if os.path.exists(logo_path):
-            # Read the image file
-            img = Image.open(logo_path)
+        # If a base64 string is provided, use it directly
+        if base64_string:
+            # Strip prefix if it exists
+            if "data:image/png;base64," in base64_string:
+                base64_string = base64_string.split("data:image/png;base64,")[1]
+            if "url(data:image/png;base64," in base64_string:
+                base64_string = base64_string.split("url(data:image/png;base64,")[1].rstrip(")")
+                
+            encoded = base64_string
+        else:
+            # Use a file path
+            from PIL import Image
+            # Try multiple locations for the logo file
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            possible_paths = [
+                os.path.join(current_dir, logo_filename),
+                logo_filename,  # Try direct path
+                os.path.join(".", logo_filename),  # Try relative to working dir
+            ]
             
+            logo_path = None
+            for path in possible_paths:
+                if os.path.exists(path):
+                    logo_path = path
+                    break
+            
+            if logo_path:
+                # Read the image file
+                img = Image.open(logo_path)
+                
+                # Convert the image to base64
+                import io
+                buf = io.BytesIO()
+                img.save(buf, format="PNG")
+                byte_im = buf.getvalue()
+                encoded = base64.b64encode(byte_im).decode()
+            else:
+                print(f"Logo file not found at any of: {possible_paths}")
+                return
+        
+        if encoded:
             # Create a holder for the image with right alignment
             st.markdown(
                 f"""
@@ -302,13 +336,6 @@ def add_logo(logo_filename="PrezLab-Logos-02.png", width=150):
                 unsafe_allow_html=True
             )
             
-            # Convert the image to base64
-            import io
-            buf = io.BytesIO()
-            img.save(buf, format="PNG")
-            byte_im = buf.getvalue()
-            encoded = base64.b64encode(byte_im).decode()
-            
             # Display the image
             st.markdown(
                 f"""
@@ -321,9 +348,6 @@ def add_logo(logo_filename="PrezLab-Logos-02.png", width=150):
             
             # Save the encoded logo for future use
             st.session_state.logo_base64 = encoded
-            
-        else:
-            print(f"Logo file not found at: {logo_path}")
             
     except Exception as e:
         print(f"Error displaying logo: {e}")

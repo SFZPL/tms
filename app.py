@@ -2810,8 +2810,9 @@ def main():
     import streamlit as st
 
     inject_custom_css()
-    add_logo("PrezLab-Logos-02.png", width=120)
-
+    # Base64 string is too long to include here directly
+    logo_base64 = "iVBORw0KGgoAAAANSUhEUgAABToAAAEHCAYAAACOf/mtAAAACXBIWXMAAC4jAAAuIwF4pT92AAAgAElEQVR4nO3dS27cVtrG8SeNzOUeNwFVj5uA1Ctw9bwJKStQeaShlRWYXkGUoUYurSAyagGhVtAqoOYpATX/XCvIN+BhRMm61IXkey7/HyA4SaflN3Lx8Jzn3H74888/BQAAAAAAAAAh+9G6AAAAAAC1PCtKSZ+s6+jZfxarWWVdBIBh5VkxlvS7dR09+7xYzUrrIoCU/c26..."  # Continue with your base64 string
+    add_logo("PrezLab-Logos-02.png", width=120, base64_string=logo_base64)
     # ------------------------------------------------------------------
     # 1)  Capture *early* Google OAuth callback codes
     # ------------------------------------------------------------------
