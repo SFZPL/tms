@@ -32,37 +32,6 @@ def inject_custom_css():
         padding-top: 1rem !important;
     }
     
-    /* More direct targeting for the login form centering */
-    /* This applies when sidebar is collapsed AND we're on the login page */
-    [data-testid="collapsedControl"] {
-        display: block !important;
-    }
-    
-    [data-testid="collapsedControl"] ~ section [data-testid="stForm"] {
-        max-width: 450px !important;
-        margin-left: auto !important;
-        margin-right: auto !important;
-    }
-    
-    /* Center titles when sidebar is collapsed */
-    [data-testid="collapsedControl"] ~ section h1,
-    [data-testid="collapsedControl"] ~ section h2 {
-        text-align: center !important;
-    }
-    
-    /* Fix the login page layout specifically */
-    /* Target the login form's container */
-    #root > div:nth-child(1) > div.withScreencast > div > div > div > section > div.block-container.css-1y4p8pa.egzxvld4 > div:has(form) {
-        display: flex !important;
-        flex-direction: column !important;
-        align-items: center !important;
-    }
-    
-    /* Make form container a reasonable width */
-    [data-testid="stForm"] {
-        max-width: 450px !important;
-    }
-    
     /* Ensure sidebar stays in position */
     [data-testid="stSidebar"] {
         min-width: 300px !important;
@@ -75,9 +44,9 @@ def inject_custom_css():
         padding-right: 1.5rem;
     }
     
-    /* Progress bar color - change to coral */
+    /* Target any progress elements */
     progress {
-        color: #FF6666 !important;
+        color: #2B1B4C !important;
     }
     
     /* Typography enhancements */
@@ -102,13 +71,6 @@ def inject_custom_css():
     .stButton.primary button {
         background-color: #FF6666 !important;
         color: white !important;
-    }
-    
-    /* Login button styling */
-    [data-testid="stForm"] [data-testid="baseButton-secondary"] {
-        background-color: #FF6666 !important;
-        color: white !important;
-        border: none !important;
     }
     
     /* Input field enhancements */
