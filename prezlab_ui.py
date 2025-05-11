@@ -32,6 +32,13 @@ def inject_custom_css():
         padding-top: 1rem !important;
     }
     
+    /* NEW: Center content when sidebar is collapsed */
+    [data-testid="collapsedControl"] ~ div [data-testid="stAppViewContainer"] .main .block-container {
+        max-width: 80% !important;
+        margin-left: auto !important;
+        margin-right: auto !important;
+    }
+    
     /* Ensure sidebar stays in position */
     [data-testid="stSidebar"] {
         min-width: 300px !important;
@@ -46,7 +53,12 @@ def inject_custom_css():
     
     /* Target any progress elements */
     progress {
-        color: #2B1B4C !important;
+        color: #FF6666 !important;
+    }
+    
+    /* Fix the custom progress bar in your progress_steps function */
+    div[style*="background-color: rgb(237, 237, 237)"] div[style*="background-color: rgb(43, 27, 76)"] {
+        background-color: #FF6666 !important;
     }
     
     /* Typography enhancements */
