@@ -44,14 +44,24 @@ def inject_custom_css():
         padding-right: 1.5rem;
     }
     
-    /* Change progress bar color to PrezLab navy */
+    /* Change progress bar color to PrezLab coral instead of navy */
     .stProgress > div > div {
-        background-color: #2B1B4C !important;
+        background-color: #FF6666 !important;
+    }
+    
+    /* Fix the workflow step progress bar */
+    [data-testid="stAppViewBlockContainer"] div:has(> div > div > progress) {
+        background-color: #EDEDED !important; /* Light gray for unfilled portion */
     }
     
     /* Target any progress elements */
     progress {
-        color: #2B1B4C !important;
+        color: #FF6666 !important;
+    }
+    
+    /* For the specific workflow progress bar */
+    div[role="progressbar"] > div {
+        background-color: #FF6666 !important;
     }
     
     /* Typography enhancements */
