@@ -64,6 +64,8 @@ from designer_selector import (
     rank_designers_by_skill_match
 )
 
+from prezlab_ui import inject_custom_css, header, container, message, progress_steps, scribble
+
 # ─── Logging ─────────────────────────────────────────────────────────────────
 logging.basicConfig(
     level=logging.INFO,
@@ -2806,6 +2808,9 @@ def main():
     SessionManager.initialize_session()
 
     import streamlit as st
+
+    inject_custom_css()
+
 
     # ------------------------------------------------------------------
     # 1)  Capture *early* Google OAuth callback codes
