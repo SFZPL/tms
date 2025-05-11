@@ -3,10 +3,7 @@ import streamlit as st
 import base64
 from pathlib import Path
 
-st.set_page_config(
-    page_title="Task Management",      # optional, whatever your title is
-    layout="centered",                 # ← this flips on centered layout
-)
+
 
 # Constants
 COLORS = {
