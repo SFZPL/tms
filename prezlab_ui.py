@@ -23,36 +23,39 @@ def inject_custom_css():
     """Inject custom CSS for consistent PrezLab styling."""
     css = """
     <style>
-    /* Center content when sidebar is collapsed */
-    .sidebar-collapsed .main .block-container {
-        max-width: 800px !important;
-        margin-left: auto !important;
-        margin-right: auto !important;
-        padding-left: 2rem !important;
-        padding-right: 2rem !important;
+    /* Fix form centering - specifically target the form in the login page */
+    /* This targets the main content area when sidebar is hidden */
+    [data-testid="stAppViewContainer"] [data-testid="stVerticalBlock"] > div:has(form) {
+        display: flex !important;
+        justify-content: center !important;
+        width: 100% !important;
+        max-width: 100% !important;
     }
     
-    /* For the login page specifically - center the form */
+    /* Make the form container itself have a reasonable width */
     [data-testid="stForm"] {
         max-width: 450px !important;
-        margin-left: auto !important;
-        margin-right: auto !important;
+        width: 100% !important;
     }
     
-    /* Keep your existing CSS styles below */
+    /* Welcome title centering */
+    [data-testid="stVerticalBlock"] > div:has(h1) {
+        text-align: center !important;
+        margin-bottom: 2rem !important;
+    }
+    
+    /* Progress bar */
     .stProgress > div > div {
         background-color: #2B1B4C !important;
     }
     
-    progress {
-        color: #2B1B4C !important;
-    }
-    
+    /* Headers */
     h1, h2, h3, h4, h5, h6 {
         color: #2B1B4C !important;
         font-weight: 600 !important;
     }
     
+    /* Button styling */
     .stButton button {
         border-radius: 4px !important;
         font-weight: 500 !important;
@@ -62,6 +65,13 @@ def inject_custom_css():
     .stButton button:hover {
         transform: translateY(-2px) !important;
         box-shadow: 0 4px 6px rgba(0,0,0,0.1) !important;
+    }
+    
+    /* Login button specific styling */
+    [data-testid="stForm"] [data-testid="baseButton-secondary"] {
+        background-color: #FF6666 !important;
+        color: white !important;
+        border: none !important;
     }
     </style>
     """
