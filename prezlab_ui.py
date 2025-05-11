@@ -20,42 +20,47 @@ COLORS = {
 LOGO_BASE64 = "YOUR_BASE64_ENCODED_LOGO"
 
 def inject_custom_css():
-    """Inject custom CSS for consistent PrezLab styling."""
+    """Inject custom CSS for consistent PrezLab styling without breaking layout."""
     css = """
     <style>
-    /* Fix form centering - specifically target the form in the login page */
-    /* This targets the main content area when sidebar is hidden */
-    [data-testid="stAppViewContainer"] [data-testid="stVerticalBlock"] > div:has(form) {
-        display: flex !important;
-        justify-content: center !important;
-        width: 100% !important;
+    /* CRITICAL FIX: Preserve Streamlit's layout structure */
+    /* These classes control the main layout - we must be very careful with them */
+    .main .block-container {
         max-width: 100% !important;
+        padding-left: 5% !important;
+        padding-right: 5% !important;
+        padding-top: 1rem !important;
     }
     
-    /* Make the form container itself have a reasonable width */
-    [data-testid="stForm"] {
-        max-width: 450px !important;
-        width: 100% !important;
+    /* Ensure sidebar stays in position */
+    [data-testid="stSidebar"] {
+        min-width: 300px !important;
+        max-width: 300px !important;
     }
     
-    /* Welcome title centering */
-    [data-testid="stVerticalBlock"] > div:has(h1) {
-        text-align: center !important;
-        margin-bottom: 2rem !important;
+    /* Fix sidebar content alignment */
+    [data-testid="stSidebar"] > div:first-child {
+        padding-left: 1.5rem;
+        padding-right: 1.5rem;
     }
     
-    /* Progress bar */
+    /* Change progress bar color to PrezLab navy */
     .stProgress > div > div {
         background-color: #2B1B4C !important;
     }
     
-    /* Headers */
+    /* Target any progress elements */
+    progress {
+        color: #2B1B4C !important;
+    }
+    
+    /* Typography enhancements */
     h1, h2, h3, h4, h5, h6 {
         color: #2B1B4C !important;
         font-weight: 600 !important;
     }
     
-    /* Button styling */
+    /* Button enhancements */
     .stButton button {
         border-radius: 4px !important;
         font-weight: 500 !important;
@@ -67,11 +72,27 @@ def inject_custom_css():
         box-shadow: 0 4px 6px rgba(0,0,0,0.1) !important;
     }
     
-    /* Login button specific styling */
-    [data-testid="stForm"] [data-testid="baseButton-secondary"] {
+    /* Primary button styling */
+    .stButton.primary button {
         background-color: #FF6666 !important;
         color: white !important;
-        border: none !important;
+    }
+    
+    /* Input field enhancements */
+    .stTextInput input, 
+    .stNumberInput input, 
+    .stDateInput input,
+    .stTextArea textarea {
+        border-radius: 4px !important;
+        border-color: #EDEDED !important;
+    }
+    
+    .stTextInput input:focus, 
+    .stNumberInput input:focus, 
+    .stDateInput input:focus,
+    .stTextArea textarea:focus {
+        border-color: #FF6666 !important;
+        box-shadow: 0 0 0 1px #FF666680 !important;
     }
     </style>
     """
