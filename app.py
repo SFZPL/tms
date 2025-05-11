@@ -2827,7 +2827,7 @@ def main():
     # After injecting custom CSS
     try:
         # Try to use the configured logo function first
-        add_logo("PrezLab-Logos-02.png", width=120)
+        add_logo("PrezLab-Logos-02.png", width=1200)
     except Exception as e:
         print(f"Error adding logo from file: {e}")
         # Fall back to direct HTML injection if there's any error
