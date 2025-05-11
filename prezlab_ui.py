@@ -20,39 +20,61 @@ COLORS = {
 LOGO_BASE64 = "YOUR_BASE64_ENCODED_LOGO"
 
 def inject_custom_css():
-    """Inject custom CSS for consistent PrezLab styling without breaking layout."""
+    """Inject custom CSS for consistent styling."""
     css = """
     <style>
-    /* CRITICAL FIX: Preserve Streamlit's layout structure */
-    /* These classes control the main layout - we must be very careful with them */
-    .main .block-container {
-        max-width: 100% !important;
-        padding-left: 5% !important;
-        padding-right: 5% !important;
-        padding-top: 1rem !important;
+    /* Fix for sidebar title alignment */
+    [data-testid="stSidebarNav"] {
+        padding-left: 0 !important;
     }
     
-    /* Ensure sidebar stays in position */
-    [data-testid="stSidebar"] {
-        min-width: 300px !important;
-        max-width: 300px !important;
+    .st-emotion-cache-16txtl3 h1, 
+    .st-emotion-cache-16txtl3 h2,
+    .st-emotion-cache-16txtl3 h3,
+    [data-testid="stSidebarNav"] h1,
+    [data-testid="stSidebarNav"] h2,
+    [data-testid="stSidebarNav"] div:first-child {
+        padding-left: 1rem !important;
+        margin-left: 0 !important;
     }
-    
-    /* Fix sidebar content alignment */
-    [data-testid="stSidebar"] > div:first-child {
-        padding-left: 1.5rem;
-        padding-right: 1.5rem;
-    }
-    
-    /* Target any progress elements */
-    progress {
-        color: #2B1B4C !important;
-    }
-    
+
+    /* Rest of your existing CSS */
     /* Typography enhancements */
     h1, h2, h3, h4, h5, h6 {
         color: #2B1B4C !important;
         font-weight: 600 !important;
+    }
+    
+    /* Container styling */
+    .stApp {
+        max-width: 1200px;
+        margin: 0 auto;
+    }
+    
+    /* Custom elements */
+    .prezlab-container {
+        background-color: white;
+        border-radius: 8px;
+        padding: 1.5rem;
+        border: 1px solid #EDEDED;
+        margin: 1rem 0;
+    }
+    
+    .prezlab-header {
+        border-bottom: 2px solid #FF6666;
+        position: relative;
+        padding-bottom: 0.5rem;
+        margin-bottom: 1.5rem;
+    }
+    
+    .prezlab-point {
+        position: absolute;
+        right: -5px;
+        bottom: -5px;
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background-color: #FF6666;
     }
     
     /* Button enhancements */
@@ -65,29 +87,6 @@ def inject_custom_css():
     .stButton button:hover {
         transform: translateY(-2px) !important;
         box-shadow: 0 4px 6px rgba(0,0,0,0.1) !important;
-    }
-    
-    /* Primary button styling */
-    .stButton.primary button {
-        background-color: #FF6666 !important;
-        color: white !important;
-    }
-    
-    /* Input field enhancements */
-    .stTextInput input, 
-    .stNumberInput input, 
-    .stDateInput input,
-    .stTextArea textarea {
-        border-radius: 4px !important;
-        border-color: #EDEDED !important;
-    }
-    
-    .stTextInput input:focus, 
-    .stNumberInput input:focus, 
-    .stDateInput input:focus,
-    .stTextArea textarea:focus {
-        border-color: #FF6666 !important;
-        box-shadow: 0 0 0 1px #FF666680 !important;
     }
     </style>
     """
