@@ -141,7 +141,7 @@ ODOO_PASSWORD = get_secret("ODOO_PASSWORD")
 st.set_page_config(
     page_title="Task Management System",
     page_icon="📋",
-    layout="centered",
+    layout="wide",
     initial_sidebar_state="expanded"
 )
 
