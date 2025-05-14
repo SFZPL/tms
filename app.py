@@ -405,6 +405,9 @@ def login_page():
 
     # Touch the session so we don't expire mid‑login
     SessionManager.update_activity()
+    
+    # Add the logo with center positioning for the login page
+    add_logo(position="center", width=200)  # Bigger logo for login page
 
     # Center the form in the middle column
     col1, col2, col3 = st.columns([1, 2, 1])
@@ -2823,32 +2826,15 @@ def main():
     import streamlit as st
 
     inject_custom_css()
-    # Base64 string is too long to include here directly
-    # After injecting custom CSS
-    try:
-        # Try to use the configured logo function first
-        add_logo("PrezLab-Logos-02.png", width=240)
-    except Exception as e:
-        print(f"Error adding logo from file: {e}")
-        # Fall back to direct HTML injection if there's any error
-        logo_base64 = "iVBORw0KGgoAAAANSUhEUgAABToAAAEHCAYAAACOf/mtAAAACXBIWXMAAC4jAAAuIwF4pT92AAAgAElEQVR4nO3dS27cVtrG8SeNzOUeNwFVj5uA1Ctw9bwJKStQeaShlRWYXkGUoYYurSAyagGhVtAqoOYpATX/XCvIN+BhRMm61IXkey7/HyA4SaflN3Lx8Jzn3H74888/BQAAAAAAAAAh+9G6AAAAAAC1PCtKSZ+s6+jZfxarWWVdBIBh5VkxlvS7dR09+7xYzUrrIoCU/c26AAAAAAAAAADYF0EnAAAAAAAAgOARdAIAAAAAAAAIHkEnAAAAAAAAgOARdAIAAAAAAAAIHkEnAAAAAAAAgOA..."  # Your full base64 string
-        
-        st.markdown(
-            f"""
-            <style>
-            .logo-container {{
-                position: fixed;
-                top: 20px;
-                right: 30px;
-                z-index: 1000;
-            }}
-            </style>
-            <div class="logo-container">
-                <img src="data:image/png;base64,{logo_base64}" width="120">
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
+
+
+    # Set logo position based on login status
+    if st.session_state.get("logged_in", False):
+        # For logged-in pages, use top-right position
+        add_logo(position="top-right", width=120)
+    else:
+        # For login page, this will be handled in login_page()
+        pass
     # ------------------------------------------------------------------
     # 1)  Capture *early* Google OAuth callback codes
     # ------------------------------------------------------------------

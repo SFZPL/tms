@@ -22,79 +22,36 @@ COLORS = {
 LOGO_BASE64 = "YOUR_BASE64_ENCODED_LOGO"
 
 def inject_custom_css():
-    """Inject custom CSS for consistent PrezLab styling without breaking layout."""
     css = """
     <style>
-    /* CRITICAL FIX: Preserve Streamlit's layout structure */
-    /* These classes control the main layout - we must be very careful with them */
-    .main .block-container {
-        /* 1️⃣ how wide the content is allowed to grow */
-        max-width: 1000px !important;     /* pick any number you like */
-
-        /* 2️⃣ this single line does the centering */
-        margin: 0 auto !important;        /* AUTO side‑margins = centred */
-
-        /* 3️⃣ small top / bottom breathing room */
-        padding-top: 1rem !important;
-        padding-bottom: 1rem !important;
-    }
-
-    /* Ensure sidebar stays in position */
-    [data-testid="stSidebar"] {
-        min-width: 300px !important;
-        max-width: 300px !important;
+    /* Keep your existing CSS rules here */
+    
+    /* Add these new rules for better centering */
+    
+    /* Center the login form container */
+    [data-testid="stForm"] {
+        max-width: 500px !important;
+        margin: 0 auto !important;
     }
     
-    /* Fix sidebar content alignment */
-    [data-testid="stSidebar"] > div:first-child {
-        padding-left: 1.5rem;
-        padding-right: 1.5rem;
+    /* Ensure input fields maintain full width of container */
+    .stTextInput > div > div > input, 
+    .stPasswordInput > div > div > input {
+        width: 100% !important;
     }
     
-    /* Target any progress elements */
-    progress {
-        color: #2B1B4C !important;
+    /* Better center alignment for headers on login page */
+    .main .block-container h1, 
+    .main .block-container h2,
+    .main .block-container h3 {
+        text-align: center;
     }
     
-    /* Typography enhancements */
-    h1, h2, h3, h4, h5, h6 {
-        color: #2B1B4C !important;
-        font-weight: 600 !important;
-    }
-    
-    /* Button enhancements */
-    .stButton button {
-        border-radius: 4px !important;
-        font-weight: 500 !important;
-        transition: all 0.2s !important;
-    }
-    
-    .stButton button:hover {
-        transform: translateY(-2px) !important;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.1) !important;
-    }
-    
-    /* Primary button styling */
-    .stButton.primary button {
-        background-color: #FF6666 !important;
-        color: white !important;
-    }
-    
-    /* Input field enhancements */
-    .stTextInput input, 
-    .stNumberInput input, 
-    .stDateInput input,
-    .stTextArea textarea {
-        border-radius: 4px !important;
-        border-color: #EDEDED !important;
-    }
-    
-    .stTextInput input:focus, 
-    .stNumberInput input:focus, 
-    .stDateInput input:focus,
-    .stTextArea textarea:focus {
-        border-color: #FF6666 !important;
-        box-shadow: 0 0 0 1px #FF666680 !important;
+    /* Improve responsiveness */
+    @media (max-width: 992px) {
+        [data-testid="stForm"] {
+            max-width: 90% !important;
+        }
     }
     </style>
     """
@@ -279,8 +236,8 @@ def scribble(text, color=COLORS["coral"], style="underline"):
             unsafe_allow_html=True
         )
 
-def add_logo(logo_filename="PrezLab-Logos-02.png", width=150, base64_string=None):
-    """Add a logo to the top right corner of the app using a file or base64 string."""
+def add_logo(logo_filename="PrezLab-Logos-02.png", width=180, position="top-right", base64_string=None):
+    """Add a logo to the app using a file or base64 string with flexible positioning."""
     import base64
     import os
     
@@ -328,24 +285,42 @@ def add_logo(logo_filename="PrezLab-Logos-02.png", width=150, base64_string=None
                 return
         
         if encoded:
-            # Create a holder for the image with right alignment
+            # Different positioning styles
+            if position == "top-right":
+                position_style = """
+                    position: fixed;
+                    top: 20px;
+                    right: 30px;
+                    z-index: 1000;
+                """
+            elif position == "top-left":
+                position_style = """
+                    position: fixed;
+                    top: 20px;
+                    left: 30px;
+                    z-index: 1000;
+                """
+            elif position == "center":
+                position_style = """
+                    display: flex;
+                    justify-content: center;
+                    width: 100%;
+                    margin-bottom: 2rem;
+                """
+            else:  # Default to top-right
+                position_style = """
+                    position: fixed;
+                    top: 20px;
+                    right: 30px;
+                    z-index: 1000;
+                """
+            
+            # Create a container with the specified positioning
             st.markdown(
                 f"""
                 <style>
-                .logo-container {{
-                    position: fixed;
-                    top: 120px;
-                    right: 30px;
-                    z-index: 1000;
-                }}
+                .logo-container {{{position_style}}}
                 </style>
-                """,
-                unsafe_allow_html=True
-            )
-            
-            # Display the image
-            st.markdown(
-                f"""
                 <div class="logo-container">
                     <img src="data:image/png;base64,{encoded}" width="{width}">
                 </div>
