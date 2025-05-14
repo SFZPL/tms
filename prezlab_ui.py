@@ -24,34 +24,44 @@ LOGO_BASE64 = "YOUR_BASE64_ENCODED_LOGO"
 def inject_custom_css():
     css = """
     <style>
-    /* Keep your existing CSS rules here */
+    /* Your existing CSS here */
     
-    /* Add these new rules for better centering */
-    
-    /* Center the login form container */
-    [data-testid="stForm"] {
-        max-width: 500px !important;
+    /* Make login form fields wider */
+    /* Target the form directly */
+    form[data-testid="stForm"] {
+        width: 100%;
+        max-width: 500px;
         margin: 0 auto !important;
     }
     
-    /* Ensure input fields maintain full width of container */
-    .stTextInput > div > div > input, 
-    .stPasswordInput > div > div > input {
+    /* Target the input fields to ensure they use full width */
+    form[data-testid="stForm"] [data-testid="stTextInput"] input,
+    form[data-testid="stForm"] [data-baseweb="input"] input,
+    form[data-testid="stForm"] [data-baseweb="password-input"] input {
+        width: 100% !important;
+        min-width: 300px !important;
+        box-sizing: border-box !important;
+    }
+    
+    /* Fix the container that holds each input */
+    form[data-testid="stForm"] [data-testid="stTextInput"] > div,
+    form[data-testid="stForm"] [data-baseweb="input-container"],
+    form[data-testid="stForm"] [data-baseweb="password-input"] > div {
+        width: 100% !important;
+        min-width: 300px !important;
+    }
+    
+    /* Make sure the entire field container is full width */
+    form[data-testid="stForm"] > div > div {
         width: 100% !important;
     }
     
-    /* Better center alignment for headers on login page */
-    .main .block-container h1, 
-    .main .block-container h2,
-    .main .block-container h3 {
-        text-align: center;
-    }
-    
-    /* Improve responsiveness */
-    @media (max-width: 992px) {
-        [data-testid="stForm"] {
-            max-width: 90% !important;
-        }
+    /* Ensure good spacing between fields */
+    form[data-testid="stForm"] [data-testid="stTextInput"],
+    form[data-testid="stForm"] [data-baseweb="input"],
+    form[data-testid="stForm"] [data-baseweb="password-input"] {
+        margin-bottom: 15px;
+        width: 100% !important;
     }
     </style>
     """
