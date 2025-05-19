@@ -2704,19 +2704,20 @@ def designer_selection_page():
         with st.expander("Debug Designer Assignment", expanded=False):
             st.warning("Use these options to troubleshoot designer assignment issues")
             
-            if st.button("Test Task Update"):
+            # Add a unique key to each button (using task ID as part of the key)
+            if st.button("Test Task Update", key=f"test_update_btn_{task['id']}"):
                 with st.spinner("Testing basic task update..."):
-                    task_id = tasks[0]['id']  # First task in the list
+                    task_id = task['id']  # Current task
                     success = test_designer_update(models, uid, task_id)
                     if success:
                         st.success("Basic task update test succeeded! This confirms you have write permissions.")
                     else:
                         st.error("Basic task update test failed. Check logs for details.")
                         
-            if st.button("Check Task Fields"):
+            if st.button("Check Task Fields", key=f"check_fields_btn_{task['id']}"):
                 with st.spinner("Checking task fields..."):
                     # Get field information
-                    task_id = tasks[0]['id']  # First task
+                    task_id = task['id']  # Current task
                     field_info = models.execute_kw(
                         ODOO_DB, uid, ODOO_PASSWORD,
                         'project.task', 'fields_get',
