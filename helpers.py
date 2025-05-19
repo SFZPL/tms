@@ -1042,19 +1042,19 @@ def get_companies(models: xmlrpc.client.ServerProxy, uid: int) -> List[str]:
         
 def update_task_designer(models: xmlrpc.client.ServerProxy, uid: int, task_id: int, designer_name: str) -> bool:
     """
-    Updates a task with the assigned designer and ensures proper planning slot linkage.
+    Updates a task with the assigned designer and creates a properly-linked planning slot.
     
     Args:
         models: Odoo models proxy
         uid: User ID
-        task_id: ID of the task to update
+        task_id: ID of the task to update (this is the subtask)
         designer_name: Name of the assigned designer
         
     Returns:
         True if successful, False otherwise
     """
     try:
-        # Find employee ID for the designer
+        # Step 1: Find employee ID for the designer
         employees = get_all_employees_in_planning(models, uid)
         employee_id = find_employee_id(designer_name, employees)
         
@@ -1062,19 +1062,25 @@ def update_task_designer(models: xmlrpc.client.ServerProxy, uid: int, task_id: i
             logger.warning(f"Employee not found in planning: {designer_name}")
             return False
         
-        # Get task information including parent task
+        # Step 2: Get task details including parent task and project
         task_info = models.execute_kw(
             ODOO_DB, uid, ODOO_PASSWORD,
             'project.task', 'read',
             [[task_id]],
-            {'fields': ['id', 'name', 'parent_id', 'project_id']}
+            {'fields': ['id', 'name', 'parent_id', 'project_id', 'user_id']}
         )[0]
         
-        parent_id = False
+        # Extract parent task ID if this is a subtask
+        parent_id = None
         if task_info.get('parent_id'):
             parent_id = task_info['parent_id'][0]
         
-        # First update the task with the designer assignment
+        # Extract project ID
+        project_id = None
+        if task_info.get('project_id'):
+            project_id = task_info['project_id'][0]
+        
+        # Step 3: Find or create user ID for the designer
         user_ids = models.execute_kw(
             ODOO_DB, uid, ODOO_PASSWORD,
             'res.users', 'search_read',
@@ -1082,105 +1088,53 @@ def update_task_designer(models: xmlrpc.client.ServerProxy, uid: int, task_id: i
             {'fields': ['id', 'name']}
         )
         
+        user_id = None
         if user_ids:
             user_id = user_ids[0]['id']
-            # Update the task with the designer
+            
+            # Update the task with the user_id
             models.execute_kw(
                 ODOO_DB, uid, ODOO_PASSWORD,
                 'project.task', 'write',
                 [[task_id], {'user_id': user_id}]
             )
+            
+            logger.info(f"Updated task {task_id} with user_id {user_id}")
         
-        # MAIN CHANGE: Find and update the planning slot
-        # Look for existing planning slots for this employee/task
-        planning_slots = models.execute_kw(
+        # Step 4: Create a planning slot with ALL the proper field links
+        planning_slot_data = {
+            'name': task_info['name'],
+            'resource_id': employee_id,
+        }
+        
+        # Add all the important fields
+        if project_id:
+            planning_slot_data['project_id'] = project_id
+            
+        if task_id:
+            planning_slot_data['task_id'] = task_id
+            planning_slot_data['x_studio_sub_task_1'] = task_id  # This links the subtask
+            
+        if parent_id:
+            planning_slot_data['x_studio_parent_task'] = parent_id  # This links the parent task
+        
+        # Try to create the planning slot with all links
+        slot_id = models.execute_kw(
             ODOO_DB, uid, ODOO_PASSWORD,
-            'planning.slot', 'search_read',
-            [[['resource_id', '=', employee_id]]],
-            {'fields': ['id', 'name', 'task_id']}
+            'planning.slot', 'create',
+            [planning_slot_data]
         )
         
-        # Find the most recently created slot (likely the one we just created)
-        relevant_slot_id = None
-        if planning_slots:
-            # Sort by ID in descending order to get newest first
-            planning_slots.sort(key=lambda x: x['id'], reverse=True)
-            # Find one that might be related to our task
-            for slot in planning_slots:
-                if not slot.get('task_id') or (slot.get('task_id') and slot['task_id'][0] == task_id):
-                    relevant_slot_id = slot['id']
-                    break
-        
-        if relevant_slot_id:
-            # Update the slot with proper task linkage
-            update_values = {
-                'task_id': task_id  # Ensure task_id is set
-            }
-            
-            # Add parent task reference if this is a subtask
-            if parent_id:
-                # Check which field to use - different Odoo installations use different field names
-                field_info = models.execute_kw(
-                    ODOO_DB, uid, ODOO_PASSWORD,
-                    'planning.slot', 'fields_get',
-                    [],
-                    {'attributes': ['string', 'type']}
-                )
-                
-                if 'x_studio_parent_task' in field_info:
-                    update_values['x_studio_parent_task'] = parent_id
-                elif 'parent_id' in field_info:
-                    update_values['parent_id'] = parent_id
-                elif 'x_studio_sub_task_link' in field_info:
-                    update_values['x_studio_sub_task_link'] = task_id
-            
-            # Update the planning slot
-            models.execute_kw(
-                ODOO_DB, uid, ODOO_PASSWORD,
-                'planning.slot', 'write',
-                [[relevant_slot_id], update_values]
-            )
-            
-            logger.info(f"Updated planning slot {relevant_slot_id} with proper task linkage")
+        if slot_id:
+            logger.info(f"Created planning slot {slot_id} with all task linkages")
             return True
         else:
-            # If no relevant slot found, create one with proper linkage
-            slot_data = {
-                'name': task_info['name'],
-                'resource_id': employee_id,
-                'task_id': task_id
-            }
+            logger.error("Failed to create planning slot")
+            return False
             
-            if task_info.get('project_id'):
-                slot_data['project_id'] = task_info['project_id'][0]
-                
-            if parent_id:
-                # Try common parent task field names
-                field_info = models.execute_kw(
-                    ODOO_DB, uid, ODOO_PASSWORD,
-                    'planning.slot', 'fields_get',
-                    [],
-                    {'attributes': ['string', 'type']}
-                )
-                
-                if 'x_studio_parent_task' in field_info:
-                    slot_data['x_studio_parent_task'] = parent_id
-                elif 'parent_id' in field_info:
-                    slot_data['parent_id'] = parent_id
-            
-            slot_id = models.execute_kw(
-                ODOO_DB, uid, ODOO_PASSWORD,
-                'planning.slot', 'create',
-                [slot_data]
-            )
-            
-            logger.info(f"Created new planning slot {slot_id} with proper task linkage")
-            return True
-        
     except Exception as e:
-        logger.error(f"Error updating designer assignment: {e}", exc_info=True)
+        logger.error(f"Error in update_task_designer: {e}", exc_info=True)
         return False
-    
 
 def test_designer_update(models, uid, task_id):
     """
