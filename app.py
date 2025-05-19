@@ -548,7 +548,7 @@ def sales_order_page():
     with cols[0]:
         if st.button("← Back"):
             # Set a flag to indicate we're returning to parent (don't clear the form data)
-            st.session_state.returning_to_parent = True 
+            st.session_state["back_requested"] = True
             st.rerun()
     
     # Display selected company
@@ -661,7 +661,7 @@ def adhoc_parent_task_page():
     cols = st.columns([1, 5])
     with cols[0]:
         if st.button("← Back"):
-            st.session_state.pop("adhoc_sales_order_done", None)
+            st.session_state["back_requested"] = True
             st.rerun()
 
     # Display current selection
@@ -825,7 +825,7 @@ def adhoc_subtask_page():
     cols = st.columns([1, 5])
     with cols[0]:
         if st.button("← Back"):
-            st.session_state.pop("adhoc_parent_input_done", None)
+            st.session_state["back_requested"] = True
             st.rerun()
 
     uid = st.session_state.odoo_uid
@@ -2089,7 +2089,7 @@ def email_analysis_page():
     cols = st.columns([1, 5])
     with cols[0]:
         if st.button("← Back"):
-            st.session_state.pop("adhoc_sales_order_done", None)
+            st.session_state["back_requested"] = True
             st.rerun()
 
     # Display current selection
