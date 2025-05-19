@@ -65,7 +65,8 @@ from helpers import (
     get_project_id_by_name,
     update_task_designer,
     get_odoo_connection,
-    check_odoo_connection
+    check_odoo_connection,
+    test_designer_update
 )
 from gmail_integration import get_gmail_service, fetch_recent_emails
 from azure_llm import analyze_email
@@ -2699,6 +2700,33 @@ def designer_selection_page():
             else:
                 st.warning("No designers are currently available for this task.")
         
+        # Debug section
+        with st.expander("Debug Designer Assignment", expanded=False):
+            st.warning("Use these options to troubleshoot designer assignment issues")
+            
+            if st.button("Test Task Update"):
+                with st.spinner("Testing basic task update..."):
+                    task_id = tasks[0]['id']  # First task in the list
+                    success = test_designer_update(models, uid, task_id)
+                    if success:
+                        st.success("Basic task update test succeeded! This confirms you have write permissions.")
+                    else:
+                        st.error("Basic task update test failed. Check logs for details.")
+                        
+            if st.button("Check Task Fields"):
+                with st.spinner("Checking task fields..."):
+                    # Get field information
+                    task_id = tasks[0]['id']  # First task
+                    field_info = models.execute_kw(
+                        ODOO_DB, uid, ODOO_PASSWORD,
+                        'project.task', 'fields_get',
+                        [['user_id']],
+                        {'attributes': ['string', 'type', 'relation', 'required']}
+                    )
+                    
+                    st.write("Task user_id field information:")
+                    st.json(field_info.get('user_id', {}))
+                
         # Handle scheduling if requested
         if f"schedule_task_{task['id']}" in st.session_state and st.session_state[f"schedule_task_{task['id']}"]:
             selected_designer_key = f"selected_designer_{task['id']}"

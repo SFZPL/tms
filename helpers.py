@@ -1180,3 +1180,31 @@ def update_task_designer(models: xmlrpc.client.ServerProxy, uid: int, task_id: i
     except Exception as e:
         logger.error(f"Error updating designer assignment: {e}", exc_info=True)
         return False
+    
+
+def test_designer_update(models, uid, task_id):
+    """
+    Test function that makes a minimal change to a task
+    to debug designer assignment issues
+    """
+    try:
+        # Get the current logged-in user (which should have permissions)
+        # and assign them to the task as a test
+        logger.info(f"Testing task update with current user (uid={uid})")
+        
+        # Try to update the task with the current user
+        result = models.execute_kw(
+            ODOO_DB, uid, ODOO_PASSWORD,
+            'project.task', 'write',
+            [[task_id], {'user_id': uid}]
+        )
+        
+        if result:
+            logger.info("Test update successful!")
+            return True
+        else:
+            logger.error("Test update failed but no error was thrown")
+            return False
+    except Exception as e:
+        logger.error(f"Test update failed with error: {e}")
+        return False
