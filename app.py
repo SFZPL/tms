@@ -548,7 +548,7 @@ def sales_order_page():
     with cols[0]:
         if st.button("← Back"):
             # Set a flag to indicate we're returning to parent (don't clear the form data)
-            st.session_state["back_requested"] = True
+            st.session_state.pop("company_selection_done", None)
             st.rerun()
     
     # Display selected company
@@ -661,7 +661,7 @@ def adhoc_parent_task_page():
     cols = st.columns([1, 5])
     with cols[0]:
         if st.button("← Back"):
-            st.session_state["back_requested"] = True
+            st.session_state.pop("adhoc_sales_order_done", None)
             st.rerun()
 
     # Display current selection
@@ -825,7 +825,7 @@ def adhoc_subtask_page():
     cols = st.columns([1, 5])
     with cols[0]:
         if st.button("← Back"):
-            st.session_state["back_requested"] = True
+            st.session_state.pop("adhoc_parent_input_done", None)
             st.rerun()
 
     uid = st.session_state.odoo_uid
@@ -2026,10 +2026,6 @@ def company_selection_page():
     # Progress bar
     st.progress(25, text="Step 1 of 4: Select Company")
 
-    # Clear the return flag if it exists
-    st.session_state.pop("returning_to_company", False) if "returning_to_company" in st.session_state else None
-
-    
     # Connect to Odoo
     if "odoo_uid" not in st.session_state or "odoo_models" not in st.session_state:
         with st.spinner("Connecting to Odoo..."):
@@ -2921,25 +2917,6 @@ def main():
         login_page()
         return
     
-    # Add this before the main page routing logic
-    if st.session_state.get("back_requested"):
-        # Clear the flag
-        st.session_state.pop("back_requested")
-        
-        # Determine which page we're on and go back accordingly
-        if "adhoc_sales_order_done" in st.session_state:
-            # Going back from sales order page to company page
-            st.session_state.pop("company_selection_done", None)
-            st.rerun()
-        elif "adhoc_parent_input_done" in st.session_state:
-            # Going back from parent task page to sales order page
-            st.session_state.pop("adhoc_sales_order_done", None)
-            st.rerun()
-        elif "email_analysis_done" in st.session_state:
-            # Going back from email analysis to sales order page
-            st.session_state.pop("email_analysis_done", None)
-            st.rerun()
-
     # Main content routing (identical to previous logic)
     if "form_type" not in st.session_state:
         type_selection_page()                 # noqa: F821
