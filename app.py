@@ -2920,6 +2920,25 @@ def main():
     if not validate_session():                # noqa: F821
         login_page()
         return
+    
+    # Add this before the main page routing logic
+    if st.session_state.get("back_requested"):
+        # Clear the flag
+        st.session_state.pop("back_requested")
+        
+        # Determine which page we're on and go back accordingly
+        if "adhoc_sales_order_done" in st.session_state:
+            # Going back from sales order page to company page
+            st.session_state.pop("company_selection_done", None)
+            st.rerun()
+        elif "adhoc_parent_input_done" in st.session_state:
+            # Going back from parent task page to sales order page
+            st.session_state.pop("adhoc_sales_order_done", None)
+            st.rerun()
+        elif "email_analysis_done" in st.session_state:
+            # Going back from email analysis to sales order page
+            st.session_state.pop("email_analysis_done", None)
+            st.rerun()
 
     # Main content routing (identical to previous logic)
     if "form_type" not in st.session_state:
