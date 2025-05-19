@@ -2516,30 +2516,6 @@ def designer_selection_page():
             st.rerun()
         return
     
-    # Check if we have tasks to assign designers to
-    if "created_tasks" not in st.session_state or not st.session_state.created_tasks:
-        st.warning("No tasks available for designer assignment. Please create tasks first.")
-        if st.button("Return to Home"):
-            # Clear ALL relevant session state keys
-            keys_to_clear = [
-                "form_type", 
-                "adhoc_sales_order_done", 
-                "adhoc_parent_input_done",
-                "retainer_parent_input_done", 
-                "subtask_index", 
-                "created_tasks",
-                "designer_selection",  # Make sure this flag is cleared
-                "parent_task_id",
-                "company_selection_done",
-                "email_analysis_done",
-                "email_analysis_skipped"
-            ]
-            
-            for key in keys_to_clear:
-                st.session_state.pop(key, None)
-            st.rerun()
-        return
-    
     # Get Odoo connection
     uid = st.session_state.odoo_uid
     models = st.session_state.odoo_models
@@ -2653,230 +2629,6 @@ def designer_selection_page():
                         st.session_state[f"schedule_task_{task['id']}"] = True
                         st.rerun()
         
-        # Add this to the designer_selection_page() function where the scheduling happens
-        # Right before or after "Schedule Task {i+1}" button
-
-        with st.expander("Advanced Debug", expanded=False):
-            st.warning("Use these options to diagnose and fix assignment issues")
-            
-            # Display diagnostic information
-            st.subheader("Task Information")
-            st.write(f"Task ID: {task['id']}")
-            st.write(f"Task Name: {task.get('name', 'Unknown')}")
-            
-            # Parent task info
-            parent_id = None
-            parent_info = "None"
-            if task.get('parent_id'):
-                if isinstance(task['parent_id'], list) and len(task['parent_id']) > 1:
-                    parent_id = task['parent_id'][0]
-                    parent_info = f"{parent_id} ({task['parent_id'][1]})"
-                else:
-                    parent_id = task['parent_id']
-                    parent_info = str(parent_id)
-            st.write(f"Parent Task: {parent_info}")
-            
-            # Project info
-            project_id = None
-            project_info = "None"
-            if task.get('project_id'):
-                if isinstance(task['project_id'], list) and len(task['project_id']) > 1:
-                    project_id = task['project_id'][0]
-                    project_info = f"{project_id} ({task['project_id'][1]})"
-                else:
-                    project_id = task['project_id']
-                    project_info = str(project_id)
-            st.write(f"Project: {project_info}")
-            
-            # Manual assignment buttons
-            st.subheader("Manual Designer Assignment")
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                if st.button("Try Basic Assignment", key=f"try_basic_{task['id']}"):
-                    with st.spinner("Attempting basic assignment..."):
-                        if selected_designer_key in st.session_state:
-                            designer_name = st.session_state[selected_designer_key]
-                            st.info(f"Attempting to assign: {designer_name}")
-                            
-                            # Step 1: Find employee
-                            try:
-                                employees = get_all_employees_in_planning(models, uid)
-                                employee_id = find_employee_id(designer_name, employees)
-                                if employee_id:
-                                    st.success(f"Found employee ID: {employee_id}")
-                                else:
-                                    st.error(f"Could not find employee ID for {designer_name}")
-                            except Exception as e:
-                                st.error(f"Error finding employee: {str(e)}")
-                            
-                            # Step 2: Try to update user_id on task
-                            try:
-                                user_ids = models.execute_kw(
-                                    ODOO_DB, uid, ODOO_PASSWORD,
-                                    'res.users', 'search_read',
-                                    [[['name', 'ilike', designer_name]]],
-                                    {'fields': ['id', 'name']}
-                                )
-                                
-                                if user_ids:
-                                    user_id = user_ids[0]['id']
-                                    st.success(f"Found user ID: {user_id}")
-                                    
-                                    try:
-                                        result = models.execute_kw(
-                                            ODOO_DB, uid, ODOO_PASSWORD,
-                                            'project.task', 'write',
-                                            [[task['id']], {'user_id': user_id}]
-                                        )
-                                        st.success(f"Updated task with user_id: {result}")
-                                    except Exception as e:
-                                        st.error(f"Error updating task: {str(e)}")
-                                else:
-                                    st.error(f"No user found for {designer_name}")
-                            except Exception as e:
-                                st.error(f"Error finding user: {str(e)}")
-                            
-                            # Step 3: Create basic planning slot (no parent/task links)
-                            try:
-                                if employee_id:
-                                    slot_data = {
-                                        'name': task.get('name', f"Task {task['id']}"),
-                                        'resource_id': employee_id
-                                    }
-                                    
-                                    if project_id:
-                                        slot_data['project_id'] = project_id
-                                    
-                                    new_slot_id = models.execute_kw(
-                                        ODOO_DB, uid, ODOO_PASSWORD,
-                                        'planning.slot', 'create',
-                                        [slot_data]
-                                    )
-                                    st.success(f"Created planning slot: {new_slot_id}")
-                                else:
-                                    st.error("Cannot create planning slot without employee ID")
-                            except Exception as e:
-                                st.error(f"Error creating planning slot: {str(e)}")
-                        else:
-                            st.error("No designer selected")
-            
-            with col2:
-                if st.button("Try Adding Task Links", key=f"try_links_{task['id']}"):
-                    with st.spinner("Attempting to add task links..."):
-                        if selected_designer_key in st.session_state:
-                            designer_name = st.session_state[selected_designer_key]
-                            
-                            # Get existing planning slots
-                            try:
-                                employees = get_all_employees_in_planning(models, uid)
-                                employee_id = find_employee_id(designer_name, employees)
-                                
-                                if employee_id:
-                                    planning_slots = models.execute_kw(
-                                        ODOO_DB, uid, ODOO_PASSWORD,
-                                        'planning.slot', 'search_read',
-                                        [[['resource_id', '=', employee_id]]],
-                                        {'fields': ['id', 'name', 'task_id'], 'limit': 10, 'order': 'id desc'}
-                                    )
-                                    
-                                    if planning_slots:
-                                        slot_id = planning_slots[0]['id']
-                                        st.success(f"Found planning slot: {slot_id}")
-                                        
-                                        # Try updating with task links
-                                        update_data = {}
-                                        
-                                        # Try different field names for task links
-                                        field_names = [
-                                            'task_id', 
-                                            'x_studio_sub_task_1', 
-                                            'x_studio_sub_task_link', 
-                                            'sub_task'
-                                        ]
-                                        
-                                        for field in field_names:
-                                            update_data[field] = task['id']
-                                        
-                                        # Try different parent task field names
-                                        if parent_id:
-                                            parent_fields = [
-                                                'x_studio_parent_task',
-                                                'parent_id',
-                                                'parent_task_id'
-                                            ]
-                                            
-                                            for field in parent_fields:
-                                                update_data[field] = parent_id
-                                        
-                                        try:
-                                            st.info(f"Trying to update with fields: {list(update_data.keys())}")
-                                            result = models.execute_kw(
-                                                ODOO_DB, uid, ODOO_PASSWORD,
-                                                'planning.slot', 'write',
-                                                [[slot_id], update_data]
-                                            )
-                                            st.success(f"Update result: {result}")
-                                        except Exception as e:
-                                            st.error(f"Error updating slot with task links: {str(e)}")
-                                    else:
-                                        st.error("No planning slots found for this designer")
-                                else:
-                                    st.error(f"Could not find employee ID for {designer_name}")
-                            except Exception as e:
-                                st.error(f"Error in try_links: {str(e)}")
-                        else:
-                            st.error("No designer selected")
-                            
-            # Field Explorer
-            st.subheader("Field Explorer")
-            
-            model_options = ["project.task", "planning.slot", "planning.role", "resource.resource", "res.users"]
-            selected_model = st.selectbox("Choose model to explore", model_options, key=f"model_select_{task['id']}")
-            
-            if st.button("Explore Fields", key=f"explore_{task['id']}"):
-                with st.spinner(f"Exploring fields for {selected_model}..."):
-                    try:
-                        fields = models.execute_kw(
-                            ODOO_DB, uid, ODOO_PASSWORD,
-                            selected_model, 'fields_get',
-                            [],
-                            {'attributes': ['string', 'type', 'relation']}
-                        )
-                        
-                        # Show field count
-                        st.success(f"Found {len(fields)} fields on {selected_model}")
-                        
-                        # Group fields by type
-                        fields_by_type = {}
-                        for name, info in fields.items():
-                            field_type = info.get('type', 'unknown')
-                            if field_type not in fields_by_type:
-                                fields_by_type[field_type] = []
-                            fields_by_type[field_type].append((name, info))
-                        
-                        # Display many2one and many2many fields first as they're most relevant
-                        for important_type in ['many2one', 'many2many']:
-                            if important_type in fields_by_type:
-                                st.write(f"### {important_type.upper()} Fields:")
-                                for name, info in fields_by_type[important_type]:
-                                    relation = info.get('relation', 'None')
-                                    if 'task' in name.lower() or 'parent' in name.lower() or 'project' in name.lower():
-                                        st.write(f"**{name}**: {info.get('string')} → {relation}")
-                                    else:
-                                        st.write(f"{name}: {info.get('string')} → {relation}")
-                        
-                        # Show any other field types of interest
-                        for field_type, fields_list in fields_by_type.items():
-                            if field_type not in ['many2one', 'many2many']:
-                                st.write(f"### {field_type.upper()} Fields ({len(fields_list)}):")
-                                for name, info in fields_list:
-                                    if 'task' in name.lower() or 'parent' in name.lower() or 'project' in name.lower():
-                                        st.write(f"**{name}**: {info.get('string')}")
-                                    
-                    except Exception as e:
-                        st.error(f"Error exploring fields: {str(e)}")
-
         # Display designer suggestions if available
         designer_key = f"designer_options_{task['id']}"
         suggestion_key = f"designer_suggestion_{task['id']}"
@@ -2923,35 +2675,110 @@ def designer_selection_page():
                     st.session_state[f"selected_designer_{task['id']}"] = selected_designer
             else:
                 st.warning("No designers are currently available for this task.")
-        
-        # Debug section
-        with st.expander("Debug Designer Assignment", expanded=False):
-            st.warning("Use these options to troubleshoot designer assignment issues")
-            
-            # Add a unique key to each button (using task ID as part of the key)
-            if st.button("Test Task Update", key=f"test_update_btn_{task['id']}"):
-                with st.spinner("Testing basic task update..."):
-                    task_id = task['id']  # Current task
-                    success = test_designer_update(models, uid, task_id)
-                    if success:
-                        st.success("Basic task update test succeeded! This confirms you have write permissions.")
-                    else:
-                        st.error("Basic task update test failed. Check logs for details.")
-                        
-            if st.button("Check Task Fields", key=f"check_fields_btn_{task['id']}"):
-                with st.spinner("Checking task fields..."):
-                    # Get field information
-                    task_id = task['id']  # Current task
-                    field_info = models.execute_kw(
-                        ODOO_DB, uid, ODOO_PASSWORD,
-                        'project.task', 'fields_get',
-                        [['user_id']],
-                        {'attributes': ['string', 'type', 'relation', 'required']}
-                    )
-                    
-                    st.write("Task user_id field information:")
-                    st.json(field_info.get('user_id', {}))
                 
+            # Debug Expander - Add a debugging section for troubleshooting
+            with st.expander("Debug Designer Assignment", expanded=False):
+                st.warning("Use these options to diagnose and fix assignment issues")
+                
+                # Task Information
+                st.subheader("Task Information")
+                st.write(f"Task ID: {task['id']}")
+                st.write(f"Task Name: {task.get('name', 'Unknown')}")
+                
+                # Parent task info
+                parent_id = None
+                parent_info = "None"
+                if task.get('parent_id'):
+                    if isinstance(task['parent_id'], list) and len(task['parent_id']) > 1:
+                        parent_id = task['parent_id'][0]
+                        parent_info = f"{parent_id} ({task['parent_id'][1]})"
+                    else:
+                        parent_id = task['parent_id']
+                        parent_info = str(parent_id)
+                st.write(f"Parent Task: {parent_info}")
+                
+                # Project info
+                project_id = None
+                project_info = "None"
+                if task.get('project_id'):
+                    if isinstance(task['project_id'], list) and len(task['project_id']) > 1:
+                        project_id = task['project_id'][0]
+                        project_info = f"{project_id} ({task['project_id'][1]})"
+                    else:
+                        project_id = task['project_id']
+                        project_info = str(project_id)
+                st.write(f"Project: {project_info}")
+                
+                # Selected designer 
+                task_designer_key = f"selected_designer_{task['id']}"
+                if task_designer_key in st.session_state:
+                    designer_name = st.session_state[task_designer_key]
+                    st.write(f"Selected Designer: {designer_name}")
+                    
+                    if st.button("Try Basic Assignment", key=f"try_basic_{task['id']}"):
+                        with st.spinner("Attempting basic assignment..."):
+                            try:
+                                # Step 1: Find employee
+                                employees = get_all_employees_in_planning(models, uid)
+                                employee_id = find_employee_id(designer_name, employees)
+                                if employee_id:
+                                    st.success(f"Found employee ID: {employee_id}")
+                                else:
+                                    st.error(f"Could not find employee ID for {designer_name}")
+                                    
+                                # Step 2: Try to find user ID
+                                user_ids = models.execute_kw(
+                                    ODOO_DB, uid, ODOO_PASSWORD,
+                                    'res.users', 'search_read',
+                                    [[['name', 'ilike', designer_name]]],
+                                    {'fields': ['id', 'name']}
+                                )
+                                
+                                if user_ids:
+                                    user_id = user_ids[0]['id']
+                                    st.success(f"Found user ID: {user_id}")
+                                    
+                                    # Step 3: Update task using user_ids (many2many) format
+                                    update_data = {
+                                        'user_ids': [(6, 0, [user_id])]  # Format for many2many field
+                                    }
+                                    
+                                    result = models.execute_kw(
+                                        ODOO_DB, uid, ODOO_PASSWORD,
+                                        'project.task', 'write',
+                                        [[task['id']], update_data]
+                                    )
+                                    st.success(f"Updated task with user_ids: {result}")
+                                    
+                                    # Step 4: Create a basic planning slot
+                                    if employee_id:
+                                        slot_data = {
+                                            'name': task.get('name', f"Task {task['id']}"),
+                                            'resource_id': employee_id
+                                        }
+                                        
+                                        if project_id:
+                                            slot_data['project_id'] = project_id
+                                            
+                                        if task['id']:
+                                            slot_data['task_id'] = task['id']
+                                            
+                                        if parent_id:
+                                            slot_data['x_studio_parent_task'] = parent_id
+                                            
+                                        new_slot_id = models.execute_kw(
+                                            ODOO_DB, uid, ODOO_PASSWORD,
+                                            'planning.slot', 'create',
+                                            [slot_data]
+                                        )
+                                        st.success(f"Created planning slot: {new_slot_id}")
+                                else:
+                                    st.error(f"No user found for {designer_name}")
+                            except Exception as e:
+                                st.error(f"Error in assignment: {str(e)}")
+                else:
+                    st.info("No designer selected")
+        
         # Handle scheduling if requested
         if f"schedule_task_{task['id']}" in st.session_state and st.session_state[f"schedule_task_{task['id']}"]:
             selected_designer_key = f"selected_designer_{task['id']}"
@@ -2997,27 +2824,67 @@ def designer_selection_page():
                                 )
                                 
                                 if slot_id:
-                                    # Update the task with the assigned designer
+                                    # Update the task with the assigned designer using the new format
                                     with st.spinner(f"Updating task with designer {designer_name}..."):
-                                        success = update_task_designer(models, uid, task['id'], designer_name)
-                                        
-                                        if success:
-                                            st.success(f"Successfully assigned {designer_name} to the task!")
-                                            # Update task in session state
-                                            task["designer_assigned"] = designer_name
-                                            task["planning_slot_id"] = slot_id
-                                            # Clean up session state keys for this task
-                                            st.session_state.pop(f"schedule_task_{task['id']}", None)
-                                        else:
-                                            st.error(f"Failed to update task with designer information. Please check Odoo configuration and field names.")
-                                            # Provide troubleshooting information
-                                            with st.expander("Troubleshooting Information"):
-                                                st.markdown("The system failed to update the task with the designer information. This could be due to:")
-                                                st.markdown("1. Missing fields in the Odoo task model")
-                                                st.markdown("2. Insufficient permissions for the current Odoo user")
-                                                st.markdown("3. Network connectivity issues")
-                                                st.markdown("4. The designer may not have a corresponding user record in Odoo")
-                                                st.markdown("\nCheck the application logs for more detailed error information.")
+                                        try:
+                                            # First get the user ID for the designer
+                                            user_ids = models.execute_kw(
+                                                ODOO_DB, uid, ODOO_PASSWORD,
+                                                'res.users', 'search_read',
+                                                [[['name', 'ilike', designer_name]]],
+                                                {'fields': ['id', 'name']}
+                                            )
+                                            
+                                            if user_ids:
+                                                user_id = user_ids[0]['id']
+                                                
+                                                # Update task with user_ids (many2many) format
+                                                update_data = {
+                                                    'user_ids': [(6, 0, [user_id])]
+                                                }
+                                                
+                                                result = models.execute_kw(
+                                                    ODOO_DB, uid, ODOO_PASSWORD,
+                                                    'project.task', 'write',
+                                                    [[task['id']], update_data]
+                                                )
+                                                
+                                                if result:
+                                                    st.success(f"Successfully assigned {designer_name} to the task!")
+                                                    
+                                                    # Also update the planning slot with proper links
+                                                    slot_update = {}
+                                                    
+                                                    # Add task_id
+                                                    slot_update['task_id'] = task['id']
+                                                    
+                                                    # Add parent task link if available
+                                                    if parent_task_id:
+                                                        slot_update['x_studio_parent_task'] = parent_task_id
+                                                    
+                                                    # Add project link if available
+                                                    if task.get('project_id') and isinstance(task['project_id'], list):
+                                                        slot_update['project_id'] = task['project_id'][0]
+                                                    
+                                                    # Update the planning slot
+                                                    models.execute_kw(
+                                                        ODOO_DB, uid, ODOO_PASSWORD,
+                                                        'planning.slot', 'write',
+                                                        [[slot_id], slot_update]
+                                                    )
+                                                    
+                                                    # Update task in session state
+                                                    task["designer_assigned"] = designer_name
+                                                    task["planning_slot_id"] = slot_id
+                                                    
+                                                    # Clean up session state keys for this task
+                                                    st.session_state.pop(f"schedule_task_{task['id']}", None)
+                                                else:
+                                                    st.error("Failed to update task with designer information")
+                                            else:
+                                                st.error(f"No user found with name like {designer_name}")
+                                        except Exception as e:
+                                            st.error(f"Error updating task assignment: {str(e)}")
                                 else:
                                     st.error(f"Failed to create planning slot for {designer_name}.")
                             else:
@@ -3061,10 +2928,10 @@ def designer_selection_page():
         if st.button("Complete Process (Skip Remaining Assignments)", type="primary"):
             # Clear session state and return to home even if not all tasks are assigned
             for key in ["form_type", "adhoc_sales_order_done", "adhoc_parent_input_done", 
-                      "retainer_parent_input_done", "subtask_index", "created_tasks"]:
+                      "retainer_parent_input_done", "subtask_index", "created_tasks",
+                      "designer_selection", "parent_task_id", "company_selection_done"]:
                 st.session_state.pop(key, None)
             st.rerun()
-
 
 
 # -------------------------------
