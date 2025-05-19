@@ -1315,7 +1315,7 @@ def retainer_parent_task_page():
     cols = st.columns([1, 5])
     with cols[0]:
         if st.button("← Back"):
-            st.session_state.pop("company_selection_done", None)
+            st.session_state.returning_to_company = True
             st.rerun()
             
     # Display selected company
@@ -2025,6 +2025,10 @@ def company_selection_page():
     
     # Progress bar
     st.progress(25, text="Step 1 of 4: Select Company")
+
+    # Clear the return flag if it exists
+    st.session_state.pop("returning_to_company", False) if "returning_to_company" in st.session_state else None
+
     
     # Connect to Odoo
     if "odoo_uid" not in st.session_state or "odoo_models" not in st.session_state:
