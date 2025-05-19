@@ -1040,10 +1040,9 @@ def get_companies(models: xmlrpc.client.ServerProxy, uid: int) -> List[str]:
             st.error(f"Failed to retrieve companies: {e}")
             return []
         
-# Add helper function to helpers.py
 def update_task_designer(models: xmlrpc.client.ServerProxy, uid: int, task_id: int, designer_name: str) -> bool:
     """
-    Updates a task with the assigned designer.
+    Updates a task with the assigned designer and ensures proper planning slot linkage.
     
     Args:
         models: Odoo models proxy
@@ -1063,107 +1062,121 @@ def update_task_designer(models: xmlrpc.client.ServerProxy, uid: int, task_id: i
             logger.warning(f"Employee not found in planning: {designer_name}")
             return False
         
-        # Log what we're trying to do
-        logger.info(f"Updating task {task_id} with designer {designer_name} (Employee ID: {employee_id})")
-        
-        # First, check if the task exists
-        task_check = models.execute_kw(
+        # Get task information including parent task
+        task_info = models.execute_kw(
             ODOO_DB, uid, ODOO_PASSWORD,
-            'project.task', 'search_read',
-            [[['id', '=', task_id]]],
+            'project.task', 'read',
+            [[task_id]],
+            {'fields': ['id', 'name', 'parent_id', 'project_id']}
+        )[0]
+        
+        parent_id = False
+        if task_info.get('parent_id'):
+            parent_id = task_info['parent_id'][0]
+        
+        # First update the task with the designer assignment
+        user_ids = models.execute_kw(
+            ODOO_DB, uid, ODOO_PASSWORD,
+            'res.users', 'search_read',
+            [[['name', 'ilike', designer_name]]],
             {'fields': ['id', 'name']}
         )
         
-        if not task_check:
-            logger.error(f"Task {task_id} not found in Odoo")
-            return False
-            
-        # Get available fields on the task model
-        field_info = models.execute_kw(
-            ODOO_DB, uid, ODOO_PASSWORD,
-            'project.task', 'fields_get',
-            [],
-            {'attributes': ['string', 'type', 'required']}
-        )
-        
-        # Try different approaches to assign the designer based on available fields
-        update_values = {}
-        
-        # Try standard user_id field first
-        if 'user_id' in field_info:
-            # Find or create user record for the designer
-            user_ids = models.execute_kw(
-                ODOO_DB, uid, ODOO_PASSWORD,
-                'res.users', 'search_read',
-                [[['name', 'ilike', designer_name]]],
-                {'fields': ['id', 'name']}
-            )
-            
-            if user_ids:
-                user_id = user_ids[0]['id']
-                update_values['user_id'] = user_id
-            else:
-                # Try to find by resource/employee relationship
-                logger.info(f"No user found for {designer_name}, trying resource/employee relationship")
-        
-        # Try x_studio_designer_3 field (common in customized Odoo)
-        if 'x_studio_designer_3' in field_info:
-            update_values['x_studio_designer_3'] = designer_name
-            
-        # Try x_studio_assigned_to field (another common custom field)
-        if 'x_studio_assigned_to' in field_info:
-            update_values['x_studio_assigned_to'] = designer_name
-        
-        # Add description note about assignment if no specific designer field found
-        if not update_values and 'description' in field_info:
-            task_data = models.execute_kw(
-                ODOO_DB, uid, ODOO_PASSWORD,
-                'project.task', 'read',
-                [[task_id]],
-                {'fields': ['description']}
-            )[0]
-            
-            current_description = task_data.get('description', '')
-            new_description = current_description + f"\n\nAssigned to designer: {designer_name}"
-            update_values['description'] = new_description
-            
-        # If we have values to update, proceed with the update
-        if update_values:
-            logger.info(f"Updating task {task_id} with values: {update_values}")
-            result = models.execute_kw(
+        if user_ids:
+            user_id = user_ids[0]['id']
+            # Update the task with the designer
+            models.execute_kw(
                 ODOO_DB, uid, ODOO_PASSWORD,
                 'project.task', 'write',
-                [[task_id], update_values]
+                [[task_id], {'user_id': user_id}]
+            )
+        
+        # MAIN CHANGE: Find and update the planning slot
+        # Look for existing planning slots for this employee/task
+        planning_slots = models.execute_kw(
+            ODOO_DB, uid, ODOO_PASSWORD,
+            'planning.slot', 'search_read',
+            [[['resource_id', '=', employee_id]]],
+            {'fields': ['id', 'name', 'task_id']}
+        )
+        
+        # Find the most recently created slot (likely the one we just created)
+        relevant_slot_id = None
+        if planning_slots:
+            # Sort by ID in descending order to get newest first
+            planning_slots.sort(key=lambda x: x['id'], reverse=True)
+            # Find one that might be related to our task
+            for slot in planning_slots:
+                if not slot.get('task_id') or (slot.get('task_id') and slot['task_id'][0] == task_id):
+                    relevant_slot_id = slot['id']
+                    break
+        
+        if relevant_slot_id:
+            # Update the slot with proper task linkage
+            update_values = {
+                'task_id': task_id  # Ensure task_id is set
+            }
+            
+            # Add parent task reference if this is a subtask
+            if parent_id:
+                # Check which field to use - different Odoo installations use different field names
+                field_info = models.execute_kw(
+                    ODOO_DB, uid, ODOO_PASSWORD,
+                    'planning.slot', 'fields_get',
+                    [],
+                    {'attributes': ['string', 'type']}
+                )
+                
+                if 'x_studio_parent_task' in field_info:
+                    update_values['x_studio_parent_task'] = parent_id
+                elif 'parent_id' in field_info:
+                    update_values['parent_id'] = parent_id
+                elif 'x_studio_sub_task_link' in field_info:
+                    update_values['x_studio_sub_task_link'] = task_id
+            
+            # Update the planning slot
+            models.execute_kw(
+                ODOO_DB, uid, ODOO_PASSWORD,
+                'planning.slot', 'write',
+                [[relevant_slot_id], update_values]
             )
             
-            if result:
-                logger.info(f"Successfully assigned designer {designer_name} to task {task_id}")
-                
-                # Create a note about the assignment (optional)
-                try:
-                    models.execute_kw(
-                        ODOO_DB, uid, ODOO_PASSWORD,
-                        'mail.message', 'create',
-                        [{
-                            'body': f"Designer {designer_name} assigned by Task Management System",
-                            'model': 'project.task',
-                            'res_id': task_id,
-                            'message_type': 'comment',
-                            'subtype_id': 1  # 'Discussions' subtype
-                        }]
-                    )
-                except Exception as e:
-                    # Don't fail the whole operation if just the note creation fails
-                    logger.warning(f"Created note failed but designer assigned: {e}")
-                
-                return True
-            else:
-                logger.error(f"Failed to update task {task_id} with designer information")
-                return False
+            logger.info(f"Updated planning slot {relevant_slot_id} with proper task linkage")
+            return True
         else:
-            logger.error(f"No suitable fields found to update designer information for task {task_id}")
-            return False
+            # If no relevant slot found, create one with proper linkage
+            slot_data = {
+                'name': task_info['name'],
+                'resource_id': employee_id,
+                'task_id': task_id
+            }
             
+            if task_info.get('project_id'):
+                slot_data['project_id'] = task_info['project_id'][0]
+                
+            if parent_id:
+                # Try common parent task field names
+                field_info = models.execute_kw(
+                    ODOO_DB, uid, ODOO_PASSWORD,
+                    'planning.slot', 'fields_get',
+                    [],
+                    {'attributes': ['string', 'type']}
+                )
+                
+                if 'x_studio_parent_task' in field_info:
+                    slot_data['x_studio_parent_task'] = parent_id
+                elif 'parent_id' in field_info:
+                    slot_data['parent_id'] = parent_id
+            
+            slot_id = models.execute_kw(
+                ODOO_DB, uid, ODOO_PASSWORD,
+                'planning.slot', 'create',
+                [slot_data]
+            )
+            
+            logger.info(f"Created new planning slot {slot_id} with proper task linkage")
+            return True
+        
     except Exception as e:
-        logger.error(f"Error assigning designer: {e}", exc_info=True)
+        logger.error(f"Error updating designer assignment: {e}", exc_info=True)
         return False
