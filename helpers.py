@@ -374,14 +374,24 @@ def create_task(models: xmlrpc.client.ServerProxy, uid: int, employee_id: int,
                 
                 if roles:
                     update_data['role_id'] = roles[0]['id']
-                
+                # Add before creating the planning slot
+                planning_fields = get_available_fields(models, uid, 'planning.slot')
+                st.write("Available planning.slot fields:", list(planning_fields.keys()))
+
                 # Try to update with parent/child references if they exist
-                if task_id and 'x_studio_sub_task_link' in update_data:
-                    update_data['x_studio_sub_task_link'] = task_id
+                if task_id:
+                    # Check if field exists before adding it
+                    if 'x_studio_sub_task_link' in planning_fields:
+                        update_data['x_studio_sub_task_link'] = task_id
+                    elif 'task_id' in planning_fields:
+                        update_data['task_id'] = task_id
                     
-                if parent_task_id and 'x_studio_parent_task' in update_data:
-                    update_data['x_studio_parent_task'] = parent_task_id
-                
+                if parent_task_id:
+                    # Check if field exists before adding it
+                    if 'x_studio_parent_task' in planning_fields:
+                        update_data['x_studio_parent_task'] = parent_task_id
+                    elif 'parent_id' in planning_fields:
+                        update_data['parent_id'] = parent_task_id
                 # Only perform update if we have data to update
                 if update_data:
                     models.execute_kw(
@@ -1098,8 +1108,22 @@ def get_companies(models: xmlrpc.client.ServerProxy, uid: int) -> List[str]:
             st.error(f"Failed to retrieve companies: {e}")
             return []
         
-def update_task_designer(models, uid, task_id, designer_name):
-    """Simple version to identify what's working"""
+def update_task_designer(models, uid, task_id, designer_name, assignment_note=None, planning_slot_id=None, role=None):
+    """
+    Updates a task with designer assignment information.
+    
+    Args:
+        models: Odoo models proxy
+        uid: User ID
+        task_id: ID of the task to update
+        designer_name: Name of the designer to assign
+        assignment_note: Optional assignment note to add to description
+        planning_slot_id: Optional ID of the related planning slot
+        role: Optional role name for the designer
+        
+    Returns:
+        True if successful, False otherwise
+    """
     try:
         # Find employee ID
         employees = get_all_employees_in_planning(models, uid)
@@ -1114,11 +1138,26 @@ def update_task_designer(models, uid, task_id, designer_name):
             return False
         
         # Update task with minimal information
-        update_values = {
-            'description': f"\n\nAssigned to designer: {designer_name} on {datetime.now().strftime('%Y-%m-%d %H:%M')}"
-        }
+        update_values = {}
         
-        # Try to find user ID
+        # Add description note if provided
+        if assignment_note:
+            # Get current description
+            current_task = models.execute_kw(
+                ODOO_DB, uid, ODOO_PASSWORD,
+                'project.task', 'read',
+                [[task_id]],
+                {'fields': ['description']}
+            )
+            current_description = current_task[0].get('description', '') if current_task else ''
+            
+            # Append new note
+            update_values['description'] = f"{current_description}\n\n{assignment_note}"
+        else:
+            # Basic assignment note
+            update_values['description'] = f"\n\nAssigned to designer: {designer_name} on {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+        
+        # Try to find user ID for the designer
         user_ids = models.execute_kw(
             ODOO_DB, uid, ODOO_PASSWORD,
             'res.users', 'search_read',
@@ -1129,6 +1168,18 @@ def update_task_designer(models, uid, task_id, designer_name):
         if user_ids:
             update_values['user_id'] = user_ids[0]['id']
             
+        # Add planning slot ID if provided
+        if planning_slot_id:
+            # Check available fields
+            available_fields = get_available_fields(models, uid, 'project.task')
+            
+            # Try different possible field names for planning slot link
+            possible_fields = ['x_studio_planning_slot', 'planning_slot_id', 'x_planning_slot_id']
+            for field in possible_fields:
+                if field in available_fields:
+                    update_values[field] = planning_slot_id
+                    break
+        
         # Log what we're updating
         logger.info(f"Updating task {task_id} with values: {update_values}")
         
@@ -1143,7 +1194,6 @@ def update_task_designer(models, uid, task_id, designer_name):
     except Exception as e:
         logger.error(f"Error updating task with designer: {e}", exc_info=True)
         return False
-
 def test_designer_update(models, uid, task_id):
     """
     Test function that makes a minimal change to a task
