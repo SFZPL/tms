@@ -65,7 +65,8 @@ from helpers import (
     get_project_id_by_name,
     update_task_designer,
     get_odoo_connection,
-    check_odoo_connection
+    check_odoo_connection,
+    get_available_fields
 )
 from gmail_integration import get_gmail_service, fetch_recent_emails
 from azure_llm import analyze_email
@@ -2515,30 +2516,6 @@ def designer_selection_page():
             st.rerun()
         return
     
-    # Check if we have tasks to assign designers to
-    if "created_tasks" not in st.session_state or not st.session_state.created_tasks:
-        st.warning("No tasks available for designer assignment. Please create tasks first.")
-        if st.button("Return to Home"):
-            # Clear ALL relevant session state keys
-            keys_to_clear = [
-                "form_type", 
-                "adhoc_sales_order_done", 
-                "adhoc_parent_input_done",
-                "retainer_parent_input_done", 
-                "subtask_index", 
-                "created_tasks",
-                "designer_selection",  # Make sure this flag is cleared
-                "parent_task_id",
-                "company_selection_done",
-                "email_analysis_done",
-                "email_analysis_skipped"
-            ]
-            
-            for key in keys_to_clear:
-                st.session_state.pop(key, None)
-            st.rerun()
-        return
-    
     # Get Odoo connection
     uid = st.session_state.odoo_uid
     models = st.session_state.odoo_models
@@ -2551,13 +2528,41 @@ def designer_selection_page():
     
     # Display parent task info if available
     if parent_task_id:
-        with st.container(border=True):
-            st.markdown(f"**Parent Task ID:** {parent_task_id}")
-            st.markdown(f"**Project:** {st.session_state.get('project', '')}")
-            st.markdown(f"**Customer:** {st.session_state.get('customer', '')}")
-            # Add Drive folder link if available
-            if "drive_folder_link" in st.session_state:
-                st.markdown(f"**📁 Google Drive Folder:** [Open Folder]({st.session_state.drive_folder_link})")
+        try:
+            # Fetch parent task details
+            parent_task_data = models.execute_kw(
+                ODOO_DB, uid, ODOO_PASSWORD,
+                'project.task', 'read',
+                [[parent_task_id]],
+                {'fields': ['name', 'x_studio_service_category_1', 'x_studio_service_category_2', 'description']}
+            )
+            
+            if parent_task_data:
+                parent_info = parent_task_data[0]
+                with st.container(border=True):
+                    st.markdown(f"**Parent Task:** {parent_info.get('name', f'ID: {parent_task_id}')}")
+                    st.markdown(f"**Parent Task ID:** {parent_task_id}")
+                    st.markdown(f"**Project:** {st.session_state.get('project', '')}")
+                    st.markdown(f"**Customer:** {st.session_state.get('customer', '')}")
+                    
+                    # Service categories if available
+                    if 'x_studio_service_category_1' in parent_info and parent_info['x_studio_service_category_1']:
+                        if isinstance(parent_info['x_studio_service_category_1'], list):
+                            st.markdown(f"**Service Category 1:** {parent_info['x_studio_service_category_1'][1]}")
+                        else:
+                            st.markdown(f"**Service Category 1:** {parent_info['x_studio_service_category_1']}")
+                    
+                    # Add Drive folder link if available
+                    if "drive_folder_link" in st.session_state:
+                        st.markdown(f"**📁 Google Drive Folder:** [Open Folder]({st.session_state.drive_folder_link})")
+        except Exception as e:
+            logger.warning(f"Could not fetch parent task details: {e}")
+            with st.container(border=True):
+                st.markdown(f"**Parent Task ID:** {parent_task_id}")
+                st.markdown(f"**Project:** {st.session_state.get('project', '')}")
+                st.markdown(f"**Customer:** {st.session_state.get('customer', '')}")
+                if "drive_folder_link" in st.session_state:
+                    st.markdown(f"**📁 Google Drive Folder:** [Open Folder]({st.session_state.drive_folder_link})")
 
     # Load all designers once
     with st.spinner("Loading designer information..."):
@@ -2589,7 +2594,16 @@ def designer_selection_page():
             ('x_studio_target_language', 'Target Language')
         ]:
             if field in task and task[field]:
-                task_details += f"{label}: {task[field]}\n"
+                if isinstance(task[field], list) and len(task[field]) >= 2:
+                    task_details += f"{label}: {task[field][1]}\n"
+                else:
+                    task_details += f"{label}: {task[field]}\n"
+        
+        # Add parent task information to task details for better matching
+        if parent_task_id:
+            task_details += f"Parent Task ID: {parent_task_id}\n"
+            task_details += f"Project: {st.session_state.get('project', '')}\n"
+            task_details += f"Customer: {st.session_state.get('customer', '')}\n"
         
         # Show current task status
         current_status = "Not assigned"
@@ -2608,12 +2622,26 @@ def designer_selection_page():
                     if st.button(f"Suggest Designers for Task {i+1}", key=f"suggest_{task['id']}"):
                         with st.spinner("Analyzing best designers..."):
                             # Calculate due date for availability check
-                            due_date = task.get('x_studio_client_due_date_3') or task.get('date_deadline')
-                            if not due_date:
+                            due_date = None
+                            if 'x_studio_client_due_date_3' in task and task['x_studio_client_due_date_3']:
+                                due_date = task['x_studio_client_due_date_3']
+                            elif 'date_deadline' in task and task['date_deadline']:
+                                due_date = task['date_deadline']
+                            else:
                                 due_date = datetime.now() + pd.Timedelta(days=7)  # Default 1 week
                             
-                            # Estimate task duration (could be refined with AI)
+                            # Estimate task duration based on service categories and design units
                             estimated_duration = 8  # Default 8 hours
+                            
+                            # Try to refine duration estimate based on design units if available
+                            design_units_sc1 = task.get('x_studio_total_no_of_design_units_sc1', 0)
+                            design_units_sc2 = task.get('x_studio_total_no_of_design_units_sc2', 0)
+                            
+                            if design_units_sc1 or design_units_sc2:
+                                # Simple formula: 2 hours per design unit, minimum 4 hours
+                                total_units = (design_units_sc1 or 0) + (design_units_sc2 or 0)
+                                if total_units > 0:
+                                    estimated_duration = max(4, total_units * 2)
                             
                             # Get ranked designers
                             ranked_designers = rank_designers_by_skill_match(task_details, designers_df)
@@ -2706,6 +2734,17 @@ def designer_selection_page():
             if selected_designer_key in st.session_state:
                 designer_name = st.session_state[selected_designer_key]
                 
+                # Add debug logging to verify the correct designer name is being passed
+                st.write(f"Debug: Selected designer: {designer_name}")
+                
+                # Find employee ID with more robust matching
+                employee_id = None
+                for emp in employees:
+                    if designer_name.lower() in emp['name'].lower():
+                        employee_id = emp['id']
+                        st.write(f"Debug: Found employee ID: {employee_id} for {emp['name']}")
+                        break
+
                 # Try to find the available slot for this designer
                 designer_key = f"designer_options_{task['id']}"
                 if designer_key in st.session_state:
@@ -2726,27 +2765,72 @@ def designer_selection_page():
                             employee_id = find_employee_id(designer_name, employees)
                             
                             if employee_id:
-                                # Create a planning slot for this task
+                                # Get parent task name if available
+                                parent_info = ""
+                                if parent_task_id:
+                                    try:
+                                        parent_task_data = models.execute_kw(
+                                            ODOO_DB, uid, ODOO_PASSWORD,
+                                            'project.task', 'read',
+                                            [[parent_task_id]],
+                                            {'fields': ['name']}
+                                        )
+                                        if parent_task_data:
+                                            parent_name = parent_task_data[0].get('name', f"Parent {parent_task_id}")
+                                            parent_info = f" | Parent: {parent_name}"
+                                    except Exception as e:
+                                        logger.warning(f"Could not fetch parent task name: {e}")
+                                        parent_info = f" | Parent ID: {parent_task_id}"
+                                
+                                # Get task name with project/customer context
+                                task_name = task.get('name', f"Task {task['id']}")
+                                project_name = st.session_state.get('project', '')
+                                customer_name = st.session_state.get('customer', '')
+                                
+                                planning_task_name = f"{task_name}{parent_info}"
+                                if project_name:
+                                    planning_task_name += f" | Project: {project_name}"
+                                if customer_name:
+                                    planning_task_name += f" | Customer: {customer_name}"
+                                
+                                # Convert to datetime if needed
                                 task_start = available_from
                                 task_end = available_until
                                 
-                                # Convert to datetime if needed
                                 if isinstance(task_start, pd.Timestamp):
                                     task_start = task_start.to_pydatetime()
                                 if isinstance(task_end, pd.Timestamp):
                                     task_end = task_end.to_pydatetime()
                                 
-                                # Create the planning slot
+
+                                # Add before creating the planning slot
+                                planning_fields = get_available_fields(models, uid, 'planning.slot')
+                                st.write("Available planning.slot fields:", list(planning_fields.keys()))
+
+                                # Create the planning slot with full context
                                 slot_id = create_task(
                                     models, uid, employee_id, 
-                                    f"Task {task['id']}: {task.get('name', 'Unknown Task')}", 
-                                    task_start, task_end
+                                    planning_task_name, 
+                                    task_start, task_end,
+                                    parent_task_id=parent_task_id,
+                                    task_id=task['id']
                                 )
                                 
                                 if slot_id:
                                     # Update the task with the assigned designer
                                     with st.spinner(f"Updating task with designer {designer_name}..."):
-                                        success = update_task_designer(models, uid, task['id'], designer_name)
+                                        # Create a more descriptive assignment note
+                                        assignment_note = (
+                                            f"Designer {designer_name} assigned by Task Management System\n"
+                                            f"Assignment Date: {datetime.now().strftime('%Y-%m-%d %H:%M')}\n"
+                                            f"Scheduled Time: {task_start.strftime('%Y-%m-%d %H:%M')} to {task_end.strftime('%Y-%m-%d %H:%M')}\n"
+                                            f"Planning Slot ID: {slot_id}"
+                                        )
+                                        
+                                        success = update_task_designer(models, uid, task['id'], designer_name, 
+                                                                      assignment_note=assignment_note, 
+                                                                      planning_slot_id=slot_id,
+                                                                      role="Designer")
                                         
                                         if success:
                                             st.success(f"Successfully assigned {designer_name} to the task!")
@@ -2808,10 +2892,10 @@ def designer_selection_page():
         if st.button("Complete Process (Skip Remaining Assignments)", type="primary"):
             # Clear session state and return to home even if not all tasks are assigned
             for key in ["form_type", "adhoc_sales_order_done", "adhoc_parent_input_done", 
-                      "retainer_parent_input_done", "subtask_index", "created_tasks"]:
+                      "retainer_parent_input_done", "subtask_index", "created_tasks",
+                      "designer_selection", "parent_task_id"]:
                 st.session_state.pop(key, None)
             st.rerun()
-
 
 
 # -------------------------------

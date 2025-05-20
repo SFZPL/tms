@@ -307,7 +307,8 @@ def get_employee_schedule(models: xmlrpc.client.ServerProxy, uid: int, employee_
         return []
 
 def create_task(models: xmlrpc.client.ServerProxy, uid: int, employee_id: int, 
-                task_name: str, task_start: datetime, task_end: datetime) -> Optional[int]:
+                task_name: str, task_start: datetime, task_end: datetime, 
+                parent_task_id: int = None, task_id: int = None) -> Optional[int]:
     """
     Creates a new task in the employee's schedule.
     
@@ -318,17 +319,28 @@ def create_task(models: xmlrpc.client.ServerProxy, uid: int, employee_id: int,
         task_name: Name of the task
         task_start: Start datetime
         task_end: End datetime
+        parent_task_id: Optional parent task ID
+        task_id: Optional task ID being assigned
         
     Returns:
         Task ID if successful, None if failed
     """
     try:
+        # Create task data with additional references
         task_data = {
             'resource_id': employee_id,
             'name': task_name,
             'start_datetime': task_start.strftime("%Y-%m-%d %H:%M:%S"),
             'end_datetime': task_end.strftime("%Y-%m-%d %H:%M:%S"),
+            'role': 'Designer',  # Explicitly set role to Designer
         }
+        
+        # Add references to related Odoo tasks if available
+        if task_id:
+            task_data['x_studio_related_task_id'] = task_id
+        
+        if parent_task_id:
+            task_data['x_studio_parent_task_id'] = parent_task_id
         
         task_id = models.execute_kw(
             ODOO_DB, uid, ODOO_PASSWORD,
@@ -1040,47 +1052,27 @@ def get_companies(models: xmlrpc.client.ServerProxy, uid: int) -> List[str]:
             st.error(f"Failed to retrieve companies: {e}")
             return []
         
-def update_task_designer(models: xmlrpc.client.ServerProxy, uid: int, task_id: int, designer_name: str) -> bool:
-    """
-    Updates a task with the assigned designer and creates a properly-linked planning slot.
-    
-    Args:
-        models: Odoo models proxy
-        uid: User ID
-        task_id: ID of the task to update (this is the subtask)
-        designer_name: Name of the assigned designer
-        
-    Returns:
-        True if successful, False otherwise
-    """
+def update_task_designer(models, uid, task_id, designer_name):
+    """Simple version to identify what's working"""
     try:
-        # Step 1: Find employee ID for the designer
+        # Find employee ID
         employees = get_all_employees_in_planning(models, uid)
-        employee_id = find_employee_id(designer_name, employees)
+        employee_id = None
+        for emp in employees:
+            if designer_name.lower() in emp['name'].lower():
+                employee_id = emp['id']
+                break
         
         if not employee_id:
             logger.warning(f"Employee not found in planning: {designer_name}")
             return False
         
-        # Step 2: Get task details including parent task and project
-        task_info = models.execute_kw(
-            ODOO_DB, uid, ODOO_PASSWORD,
-            'project.task', 'read',
-            [[task_id]],
-            {'fields': ['id', 'name', 'parent_id', 'project_id', 'user_id']}
-        )[0]
+        # Update task with minimal information
+        update_values = {
+            'description': f"\n\nAssigned to designer: {designer_name} on {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+        }
         
-        # Extract parent task ID if this is a subtask
-        parent_id = None
-        if task_info.get('parent_id'):
-            parent_id = task_info['parent_id'][0]
-        
-        # Extract project ID
-        project_id = None
-        if task_info.get('project_id'):
-            project_id = task_info['project_id'][0]
-        
-        # Step 3: Find or create user ID for the designer
+        # Try to find user ID
         user_ids = models.execute_kw(
             ODOO_DB, uid, ODOO_PASSWORD,
             'res.users', 'search_read',
@@ -1088,52 +1080,22 @@ def update_task_designer(models: xmlrpc.client.ServerProxy, uid: int, task_id: i
             {'fields': ['id', 'name']}
         )
         
-        user_id = None
         if user_ids:
-            user_id = user_ids[0]['id']
+            update_values['user_id'] = user_ids[0]['id']
             
-            # Update the task with the user_id
-            models.execute_kw(
-                ODOO_DB, uid, ODOO_PASSWORD,
-                'project.task', 'write',
-                [[task_id], {'user_id': user_id}]
-            )
-            
-            logger.info(f"Updated task {task_id} with user_id {user_id}")
+        # Log what we're updating
+        logger.info(f"Updating task {task_id} with values: {update_values}")
         
-        # Step 4: Create a planning slot with ALL the proper field links
-        planning_slot_data = {
-            'name': task_info['name'],
-            'resource_id': employee_id,
-        }
-        
-        # Add all the important fields
-        if project_id:
-            planning_slot_data['project_id'] = project_id
-            
-        if task_id:
-            planning_slot_data['task_id'] = task_id
-            planning_slot_data['x_studio_sub_task_1'] = task_id  # This links the subtask
-            
-        if parent_id:
-            planning_slot_data['x_studio_parent_task'] = parent_id  # This links the parent task
-        
-        # Try to create the planning slot with all links
-        slot_id = models.execute_kw(
+        # Update the task
+        result = models.execute_kw(
             ODOO_DB, uid, ODOO_PASSWORD,
-            'planning.slot', 'create',
-            [planning_slot_data]
+            'project.task', 'write',
+            [[task_id], update_values]
         )
         
-        if slot_id:
-            logger.info(f"Created planning slot {slot_id} with all task linkages")
-            return True
-        else:
-            logger.error("Failed to create planning slot")
-            return False
-            
+        return bool(result)
     except Exception as e:
-        logger.error(f"Error in update_task_designer: {e}", exc_info=True)
+        logger.error(f"Error updating task with designer: {e}", exc_info=True)
         return False
 
 def test_designer_update(models, uid, task_id):
@@ -1162,3 +1124,17 @@ def test_designer_update(models, uid, task_id):
     except Exception as e:
         logger.error(f"Test update failed with error: {e}")
         return False
+    
+# Add this debugging function to helpers.py
+def get_available_fields(models, uid, model_name='planning.slot'):
+    """Get all available fields for a model"""
+    try:
+        fields = models.execute_kw(
+            ODOO_DB, uid, ODOO_PASSWORD,
+            model_name, 'fields_get',
+            [], {'attributes': ['string', 'type', 'required']}
+        )
+        return fields
+    except Exception as e:
+        logger.error(f"Error getting fields for {model_name}: {e}")
+        return {}
