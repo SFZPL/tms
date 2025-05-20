@@ -307,10 +307,11 @@ def get_employee_schedule(models: xmlrpc.client.ServerProxy, uid: int, employee_
         return []
 
 def create_task(models: xmlrpc.client.ServerProxy, uid: int, employee_id: int, 
-                task_name: str, task_start: datetime, task_end: datetime, 
+                task_name: str, task_start: datetime, task_end: datetime,
                 parent_task_id: int = None, task_id: int = None) -> Optional[int]:
     """
     Creates a new task in the employee's schedule.
+    Bare minimum version - only using the essential fields.
     
     Args:
         models: Odoo models proxy
@@ -326,33 +327,78 @@ def create_task(models: xmlrpc.client.ServerProxy, uid: int, employee_id: int,
         Task ID if successful, None if failed
     """
     try:
-        # Create task data with additional references
+        # Create absolute minimum task data - no optional fields
         task_data = {
             'resource_id': employee_id,
             'name': task_name,
             'start_datetime': task_start.strftime("%Y-%m-%d %H:%M:%S"),
             'end_datetime': task_end.strftime("%Y-%m-%d %H:%M:%S"),
-            'role': 'Designer',  # Explicitly set role to Designer
         }
         
-        # Add references to related Odoo tasks if available
-        if task_id:
-            task_data['x_studio_related_task_id'] = task_id
-        
+        # Add project_id if that field exists (it's in the field list at index 62)
         if parent_task_id:
-            task_data['x_studio_parent_task_id'] = parent_task_id
+            try:
+                # Try to get project_id from parent task
+                parent_task = models.execute_kw(
+                    ODOO_DB, uid, ODOO_PASSWORD,
+                    'project.task', 'read',
+                    [[parent_task_id]],
+                    {'fields': ['project_id']}
+                )
+                
+                if parent_task and parent_task[0].get('project_id'):
+                    project_id = parent_task[0]['project_id'][0]  # It's likely a tuple with (id, name)
+                    task_data['project_id'] = project_id
+            except Exception as e:
+                logger.warning(f"Could not fetch project_id from parent task: {e}")
         
-        task_id = models.execute_kw(
+        # Create the planning slot with absolute minimum data
+        slot_id = models.execute_kw(
             ODOO_DB, uid, ODOO_PASSWORD,
             'planning.slot', 'create', [task_data]
         )
         
-        logger.info(f"Created task in schedule (ID: {task_id})")
-        return task_id
+        # If we got a slot_id, now try to update with additional data separately
+        if slot_id:
+            try:
+                # Now try to update the slot with additional fields
+                update_data = {}
+                
+                # Try to set role_id if we can find a Designer role
+                roles = models.execute_kw(
+                    ODOO_DB, uid, ODOO_PASSWORD,
+                    'planning.role', 'search_read',
+                    [[['name', 'ilike', 'Designer']]],
+                    {'fields': ['id', 'name']}
+                )
+                
+                if roles:
+                    update_data['role_id'] = roles[0]['id']
+                
+                # Try to update with parent/child references if they exist
+                if task_id and 'x_studio_sub_task_link' in update_data:
+                    update_data['x_studio_sub_task_link'] = task_id
+                    
+                if parent_task_id and 'x_studio_parent_task' in update_data:
+                    update_data['x_studio_parent_task'] = parent_task_id
+                
+                # Only perform update if we have data to update
+                if update_data:
+                    models.execute_kw(
+                        ODOO_DB, uid, ODOO_PASSWORD,
+                        'planning.slot', 'write',
+                        [[slot_id], update_data]
+                    )
+            except Exception as e:
+                # Don't fail if the update part has issues
+                logger.warning(f"Could not update planning slot with additional information: {e}")
+        
+        logger.info(f"Created planning slot (ID: {slot_id})")
+        return slot_id
         
     except Exception as e:
-        logger.error(f"Error creating task in schedule: {e}", exc_info=True)
-        st.error(f"Error creating task in schedule: {e}")
+        logger.error(f"Error creating planning slot: {e}", exc_info=True)
+        st.error(f"Error creating planning slot: {e}")
         return None
 
 def normalize_string(s: str) -> str:
