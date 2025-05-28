@@ -49,57 +49,45 @@ OdooRecord     = Dict[str, Any]
 def get_odoo_connection(force_refresh: bool = False):
     """
     Return (uid, models) if successful, otherwise (None, None).
-    Pulls all four Odoo secrets at call time and updates the module globals.
-    Caches the connection in st.session_state for up to 1 hour.
+    Uses credentials from the logged-in user's session.
     """
-    global ODOO_URL, ODOO_DB, ODOO_USERNAME, ODOO_PASSWORD
-
-    # ─── 1) Fetch secrets afresh ────────────────────────────────────
-    ODOO_URL      = get_secret("ODOO_URL")
-    ODOO_DB       = get_secret("ODOO_DB")
-    ODOO_USERNAME = get_secret("ODOO_USERNAME")
-    ODOO_PASSWORD = get_secret("ODOO_PASSWORD")
-
-    # Fail fast if any are missing
-    missing = [k for k,v in [
-        ("ODOO_URL",      ODOO_URL),
-        ("ODOO_DB",       ODOO_DB),
-        ("ODOO_USERNAME", ODOO_USERNAME),
-        ("ODOO_PASSWORD", ODOO_PASSWORD)
-    ] if not v]
-    if missing:
-        logger.error(f"Missing Odoo secrets: {', '.join(missing)}")
+    # Check if user has Odoo credentials in session
+    if "odoo_credentials" not in st.session_state:
+        logger.error("No Odoo credentials in session")
         return None, None
-
-    # ─── 2) Return cached if still fresh ───────────────────────────
+    
+    creds = st.session_state.odoo_credentials
+    
+    # Return cached connection if still fresh
     if not force_refresh and "odoo_connection" in st.session_state:
         conn = st.session_state.odoo_connection
         if (datetime.now() - conn["timestamp"]) < timedelta(hours=1):
             return conn["uid"], conn["models"]
-
-    # ─── 3) Establish a new XML‑RPC connection ─────────────────────
+    
     try:
-        logger.info("Establishing new Odoo XML‑RPC connection")
-        common = xmlrpc.client.ServerProxy(f"{ODOO_URL}/xmlrpc/2/common", allow_none=True)
-
-        uid = common.authenticate(ODOO_DB, ODOO_USERNAME, ODOO_PASSWORD, {})
+        logger.info("Establishing new Odoo XML-RPC connection")
+        common = xmlrpc.client.ServerProxy(f"{creds['url']}/xmlrpc/2/common", allow_none=True)
+        
+        # Re-authenticate to ensure connection is still valid
+        uid = common.authenticate(creds['db'], creds['email'], creds['password'], {})
         if not uid:
-            raise RuntimeError("authenticate() returned False")
-
-        models = xmlrpc.client.ServerProxy(f"{ODOO_URL}/xmlrpc/2/object", allow_none=True)
-
-        # Cache it in Streamlit session state
+            raise RuntimeError("Re-authentication failed")
+        
+        models = xmlrpc.client.ServerProxy(f"{creds['url']}/xmlrpc/2/object", allow_none=True)
+        
+        # Update the cached UID in credentials
+        creds['uid'] = uid
+        
+        # Cache the connection
         st.session_state.odoo_connection = {
-            "uid":       uid,
-            "models":    models,
+            "uid": uid,
+            "models": models,
             "timestamp": datetime.now(),
         }
-        logger.info(f"Odoo connection successful (UID {uid})")
+        
+        logger.info(f"Odoo connection successful for user {creds['email']} (UID {uid})")
         return uid, models
-
-    except xmlrpc.client.ProtocolError as e:
-        logger.error(f"Odoo protocol error {e.errcode}: {e.errmsg}", exc_info=True)
-        return None, None
+        
     except Exception as e:
         logger.error(f"Odoo connection error: {e}", exc_info=True)
         return None, None
@@ -119,7 +107,7 @@ def check_odoo_connection():
     try:
         # Simple test query to validate connection
         result = models.execute_kw(
-            ODOO_DB, uid, ODOO_PASSWORD,
+            st.session_state.odoo_credentials['db'], uid, st.session_state.odoo_credentials['password'],
             'res.users', 'search_count',
             [[['id', '=', uid]]]
         )
@@ -174,7 +162,7 @@ def create_odoo_task(task_data: Dict[str, Any]) -> Optional[int]:
         
         # Create task in Odoo
         task_id = models.execute_kw(
-            ODOO_DB, uid, ODOO_PASSWORD,
+            st.session_state.odoo_credentials['db'], uid, st.session_state.odoo_credentials['password'],
             'project.task', 'create', [sanitized_data]
         )
         
@@ -206,7 +194,7 @@ def get_sales_orders(models: xmlrpc.client.ServerProxy, uid: int, company_name: 
             domain = [('company_id.name', '=', company_name)]
             
         orders = models.execute_kw(
-            ODOO_DB, uid, ODOO_PASSWORD,
+            st.session_state.odoo_credentials['db'], uid, st.session_state.odoo_credentials['password'],
             'sale.order', 'search_read',
             [domain],
             {'fields': ['name', 'partner_id', 'project_id']}
@@ -226,7 +214,7 @@ def get_sales_orders(models: xmlrpc.client.ServerProxy, uid: int, company_name: 
                 domain = [('company_id.name', '=', company_name)]
                 
             orders = models.execute_kw(
-                ODOO_DB, uid, ODOO_PASSWORD,
+                st.session_state.odoo_credentials['db'], uid, st.session_state.odoo_credentials['password'],
                 'sale.order', 'search_read',
                 [domain],
                 {'fields': ['name', 'partner_id', 'project_id']}
@@ -251,7 +239,7 @@ def get_sales_order_details(models: xmlrpc.client.ServerProxy, uid: int, sales_o
     """
     try:
         orders = models.execute_kw(
-            ODOO_DB, uid, ODOO_PASSWORD,
+            st.session_state.odoo_credentials['db'], uid, st.session_state.odoo_credentials['password'],
             'sale.order', 'search_read',
             [[['name', '=', sales_order_name]]],
             {'fields': ['name', 'partner_id', 'project_id']}
@@ -293,7 +281,7 @@ def get_employee_schedule(models: xmlrpc.client.ServerProxy, uid: int, employee_
     """
     try:
         tasks = models.execute_kw(
-            ODOO_DB, uid, ODOO_PASSWORD,
+            st.session_state.odoo_credentials['db'], uid, st.session_state.odoo_credentials['password'],
             'planning.slot', 'search_read',
             [[['resource_id', '=', employee_id]]],
             {'fields': ['start_datetime', 'end_datetime'], 'order': 'start_datetime'}
@@ -340,7 +328,7 @@ def create_task(models: xmlrpc.client.ServerProxy, uid: int, employee_id: int,
             try:
                 # Try to get project_id from parent task
                 parent_task = models.execute_kw(
-                    ODOO_DB, uid, ODOO_PASSWORD,
+                    st.session_state.odoo_credentials['db'], uid, st.session_state.odoo_credentials['password'],
                     'project.task', 'read',
                     [[parent_task_id]],
                     {'fields': ['project_id']}
@@ -354,7 +342,7 @@ def create_task(models: xmlrpc.client.ServerProxy, uid: int, employee_id: int,
         
         # Create the planning slot with absolute minimum data
         slot_id = models.execute_kw(
-            ODOO_DB, uid, ODOO_PASSWORD,
+            st.session_state.odoo_credentials['db'], uid, st.session_state.odoo_credentials['password'],
             'planning.slot', 'create', [task_data]
         )
         
@@ -366,7 +354,7 @@ def create_task(models: xmlrpc.client.ServerProxy, uid: int, employee_id: int,
                 
                 # Try to set role_id if we can find a Designer role
                 roles = models.execute_kw(
-                    ODOO_DB, uid, ODOO_PASSWORD,
+                    st.session_state.odoo_credentials['db'], uid, st.session_state.odoo_credentials['password'],
                     'planning.role', 'search_read',
                     [[['name', 'ilike', 'Designer']]],
                     {'fields': ['id', 'name']}
@@ -395,7 +383,7 @@ def create_task(models: xmlrpc.client.ServerProxy, uid: int, employee_id: int,
                 # Only perform update if we have data to update
                 if update_data:
                     models.execute_kw(
-                        ODOO_DB, uid, ODOO_PASSWORD,
+                        st.session_state.odoo_credentials['db'], uid, st.session_state.odoo_credentials['password'],
                         'planning.slot', 'write',
                         [[slot_id], update_data]
                     )
@@ -461,7 +449,7 @@ def get_target_languages_odoo(models: xmlrpc.client.ServerProxy, uid: int) -> Li
     """
     try:
         records = models.execute_kw(
-            ODOO_DB, uid, ODOO_PASSWORD,
+            st.session_state.odoo_credentials['db'], uid, st.session_state.odoo_credentials['password'],
             'project.task', 'search_read',
             [[]],
             {'fields': ['x_studio_target_language']}
@@ -488,7 +476,7 @@ def get_target_languages_odoo(models: xmlrpc.client.ServerProxy, uid: int) -> Li
         uid, models = authenticate_odoo()
         try:
             records = models.execute_kw(
-                ODOO_DB, uid, ODOO_PASSWORD,
+                st.session_state.odoo_credentials['db'], uid, st.session_state.odoo_credentials['password'],
                 'project.task', 'search_read',
                 [[]],
                 {'fields': ['x_studio_target_language']}
@@ -514,7 +502,7 @@ def get_guidelines_odoo(models, uid):
     try:
         # First, get the fields available on the x_guidelines model
         field_info = models.execute_kw(
-            ODOO_DB, uid, ODOO_PASSWORD,
+            st.session_state.odoo_credentials['db'], uid, st.session_state.odoo_credentials['password'],
             'x_guidelines', 'fields_get',
             [],
             {'attributes': ['string', 'type']}
@@ -539,7 +527,7 @@ def get_guidelines_odoo(models, uid):
         # Now fetch the guidelines with the correct field
         fields_to_fetch = ['id', display_field]
         guidelines_records = models.execute_kw(
-            ODOO_DB, uid, ODOO_PASSWORD,
+            st.session_state.odoo_credentials['db'], uid, st.session_state.odoo_credentials['password'],
             'x_guidelines', 'search_read',
             [[]],
             {'fields': fields_to_fetch}
@@ -566,7 +554,7 @@ def get_client_success_executives_odoo(models: xmlrpc.client.ServerProxy, uid: i
     """
     try:
         records = models.execute_kw(
-            ODOO_DB, uid, ODOO_PASSWORD,
+            st.session_state.odoo_credentials['db'], uid, st.session_state.odoo_credentials['password'],
             'res.users', 'search_read',
             [[]],
             {'fields': ['id', 'name']}
@@ -583,7 +571,7 @@ def get_client_success_executives_odoo(models: xmlrpc.client.ServerProxy, uid: i
         uid, models = authenticate_odoo()
         try:
             records = models.execute_kw(
-                ODOO_DB, uid, ODOO_PASSWORD,
+                st.session_state.odoo_credentials['db'], uid, st.session_state.odoo_credentials['password'],
                 'res.users', 'search_read',
                 [[]],
                 {'fields': ['id', 'name']}
@@ -616,7 +604,7 @@ def get_service_category_1_options(models: xmlrpc.client.ServerProxy, uid: int) 
                 try:
                     # Try to query the model
                     category_records = models.execute_kw(
-                        ODOO_DB, uid, ODOO_PASSWORD,
+                        st.session_state.odoo_credentials['db'], uid, st.session_state.odoo_credentials['password'],
                         model_name, 'search_read',
                         [[]],
                         {'fields': ['id', 'name']}
@@ -635,7 +623,7 @@ def get_service_category_1_options(models: xmlrpc.client.ServerProxy, uid: int) 
         
         # Fall back to extracting from existing tasks
         records = models.execute_kw(
-            ODOO_DB, uid, ODOO_PASSWORD,
+            st.session_state.odoo_credentials['db'], uid, st.session_state.odoo_credentials['password'],
             'project.task', 'search_read',
             [[]],
             {'fields': ['id', 'x_studio_service_category_1']}
@@ -656,7 +644,7 @@ def get_service_category_1_options(models: xmlrpc.client.ServerProxy, uid: int) 
                 try:
                     # Try to get the name from Odoo
                     category_name_records = models.execute_kw(
-                        ODOO_DB, uid, ODOO_PASSWORD,
+                        st.session_state.odoo_credentials['db'], uid, st.session_state.odoo_credentials['password'],
                         'x_service_category', 'read',  # Assuming this model exists
                         [[cat]],
                         {'fields': ['name']}
@@ -689,7 +677,7 @@ def get_service_category_1_options(models: xmlrpc.client.ServerProxy, uid: int) 
         try:
             # Simple retry - just get base categories from tasks
             records = models.execute_kw(
-                ODOO_DB, uid, ODOO_PASSWORD,
+                st.session_state.odoo_credentials['db'], uid, st.session_state.odoo_credentials['password'],
                 'project.task', 'search_read',
                 [[]],
                 {'fields': ['id', 'x_studio_service_category_1']}
@@ -733,7 +721,7 @@ def get_service_category_2_options(models: xmlrpc.client.ServerProxy, uid: int) 
                 try:
                     # Try to query the model
                     category_records = models.execute_kw(
-                        ODOO_DB, uid, ODOO_PASSWORD,
+                        st.session_state.odoo_credentials['db'], uid, st.session_state.odoo_credentials['password'],
                         model_name, 'search_read',
                         [[]],
                         {'fields': ['id', 'name']}
@@ -752,7 +740,7 @@ def get_service_category_2_options(models: xmlrpc.client.ServerProxy, uid: int) 
         
         # Fall back to extracting from existing tasks
         records = models.execute_kw(
-            ODOO_DB, uid, ODOO_PASSWORD,
+            st.session_state.odoo_credentials['db'], uid, st.session_state.odoo_credentials['password'],
             'project.task', 'search_read',
             [[]],
             {'fields': ['id', 'x_studio_service_category_2']}
@@ -773,7 +761,7 @@ def get_service_category_2_options(models: xmlrpc.client.ServerProxy, uid: int) 
                 try:
                     # Try to get the name from Odoo
                     category_name_records = models.execute_kw(
-                        ODOO_DB, uid, ODOO_PASSWORD,
+                        st.session_state.odoo_credentials['db'], uid, st.session_state.odoo_credentials['password'],
                         'x_service_category_2', 'read',  # Assuming this model exists
                         [[cat]],
                         {'fields': ['name']}
@@ -805,7 +793,7 @@ def get_service_category_2_options(models: xmlrpc.client.ServerProxy, uid: int) 
         try:
             # Simple retry - just get base categories from tasks
             records = models.execute_kw(
-                ODOO_DB, uid, ODOO_PASSWORD,
+                st.session_state.odoo_credentials['db'], uid, st.session_state.odoo_credentials['password'],
                 'project.task', 'search_read',
                 [[]],
                 {'fields': ['id', 'x_studio_service_category_2']}
@@ -845,7 +833,7 @@ def get_retainer_projects(models: xmlrpc.client.ServerProxy, uid: int, company_n
             domain = [('company_id.name', '=', company_name)]
             
         records = models.execute_kw(
-            ODOO_DB, uid, ODOO_PASSWORD,
+            st.session_state.odoo_credentials['db'], uid, st.session_state.odoo_credentials['password'],
             'project.project', 'search_read',
             [domain],
             {'fields': ['name']}
@@ -867,7 +855,7 @@ def get_retainer_projects(models: xmlrpc.client.ServerProxy, uid: int, company_n
                 domain = [('company_id.name', '=', company_name)]
                 
             records = models.execute_kw(
-                ODOO_DB, uid, ODOO_PASSWORD,
+                st.session_state.odoo_credentials['db'], uid, st.session_state.odoo_credentials['password'],
                 'project.project', 'search_read',
                 [domain],
                 {'fields': ['name']}
@@ -892,7 +880,7 @@ def get_retainer_customers(models: xmlrpc.client.ServerProxy, uid: int) -> List[
     """
     try:
         records = models.execute_kw(
-            ODOO_DB, uid, ODOO_PASSWORD,
+            st.session_state.odoo_credentials['db'], uid, st.session_state.odoo_credentials['password'],
             'res.partner', 'search_read',
             [[['customer_rank', '>', 0]]],
             {'fields': ['name']}
@@ -910,7 +898,7 @@ def get_retainer_customers(models: xmlrpc.client.ServerProxy, uid: int) -> List[
         uid, models = authenticate_odoo()
         try:
             records = models.execute_kw(
-                ODOO_DB, uid, ODOO_PASSWORD,
+                st.session_state.odoo_credentials['db'], uid, st.session_state.odoo_credentials['password'],
                 'res.partner', 'search_read',
                 [[['customer_rank', '>', 0]]],
                 {'fields': ['name']}
@@ -935,7 +923,7 @@ def get_all_employees_in_planning(models: xmlrpc.client.ServerProxy, uid: int) -
     """
     try:
         records = models.execute_kw(
-            ODOO_DB, uid, ODOO_PASSWORD,
+            st.session_state.odoo_credentials['db'], uid, st.session_state.odoo_credentials['password'],
             'resource.resource', 'search_read',
             [],
             {'fields': ['id', 'name']}
@@ -952,7 +940,7 @@ def get_all_employees_in_planning(models: xmlrpc.client.ServerProxy, uid: int) -
         uid, models = authenticate_odoo()
         try:
             records = models.execute_kw(
-                ODOO_DB, uid, ODOO_PASSWORD,
+                st.session_state.odoo_credentials['db'], uid, st.session_state.odoo_credentials['password'],
                 'resource.resource', 'search_read',
                 [],
                 {'fields': ['id', 'name']}
@@ -1025,7 +1013,7 @@ def get_project_id_by_name(models: xmlrpc.client.ServerProxy, uid: int, project_
     """
     try:
         projects = models.execute_kw(
-            ODOO_DB, uid, ODOO_PASSWORD,
+            st.session_state.odoo_credentials['db'], uid, st.session_state.odoo_credentials['password'],
             'project.project', 'search_read',
             [[['name', '=', project_name]]],
             {'fields': ['id']}
@@ -1047,7 +1035,7 @@ def get_project_id_by_name(models: xmlrpc.client.ServerProxy, uid: int, project_
         uid, models = authenticate_odoo()
         try:
             projects = models.execute_kw(
-                ODOO_DB, uid, ODOO_PASSWORD,
+                st.session_state.odoo_credentials['db'], uid, st.session_state.odoo_credentials['password'],
                 'project.project', 'search_read',
                 [[['name', '=', project_name]]],
                 {'fields': ['id']}
@@ -1078,7 +1066,7 @@ def get_companies(models: xmlrpc.client.ServerProxy, uid: int) -> List[str]:
     """
     try:
         records = models.execute_kw(
-            ODOO_DB, uid, ODOO_PASSWORD,
+            st.session_state.odoo_credentials['db'], uid, st.session_state.odoo_credentials['password'],
             'res.company', 'search_read',
             [[]],
             {'fields': ['id', 'name']}
@@ -1096,7 +1084,7 @@ def get_companies(models: xmlrpc.client.ServerProxy, uid: int) -> List[str]:
         uid, models = authenticate_odoo()
         try:
             records = models.execute_kw(
-                ODOO_DB, uid, ODOO_PASSWORD,
+                st.session_state.odoo_credentials['db'], uid, st.session_state.odoo_credentials['password'],
                 'res.company', 'search_read',
                 [[]],
                 {'fields': ['id', 'name']}
@@ -1144,7 +1132,7 @@ def update_task_designer(models, uid, task_id, designer_name, assignment_note=No
         if assignment_note:
             # Get current description
             current_task = models.execute_kw(
-                ODOO_DB, uid, ODOO_PASSWORD,
+                st.session_state.odoo_credentials['db'], uid, st.session_state.odoo_credentials['password'],
                 'project.task', 'read',
                 [[task_id]],
                 {'fields': ['description']}
@@ -1159,7 +1147,7 @@ def update_task_designer(models, uid, task_id, designer_name, assignment_note=No
         
         # Try to find user ID for the designer
         user_ids = models.execute_kw(
-            ODOO_DB, uid, ODOO_PASSWORD,
+            st.session_state.odoo_credentials['db'], uid, st.session_state.odoo_credentials['password'],
             'res.users', 'search_read',
             [[['name', 'ilike', designer_name]]],
             {'fields': ['id', 'name']}
@@ -1185,7 +1173,7 @@ def update_task_designer(models, uid, task_id, designer_name, assignment_note=No
         
         # Update the task
         result = models.execute_kw(
-            ODOO_DB, uid, ODOO_PASSWORD,
+            st.session_state.odoo_credentials['db'], uid, st.session_state.odoo_credentials['password'],
             'project.task', 'write',
             [[task_id], update_values]
         )
@@ -1206,7 +1194,7 @@ def test_designer_update(models, uid, task_id):
         
         # Try to update the task with the current user
         result = models.execute_kw(
-            ODOO_DB, uid, ODOO_PASSWORD,
+            st.session_state.odoo_credentials['db'], uid, st.session_state.odoo_credentials['password'],
             'project.task', 'write',
             [[task_id], {'user_id': uid}]
         )
@@ -1226,7 +1214,7 @@ def get_available_fields(models, uid, model_name='planning.slot'):
     """Get all available fields for a model"""
     try:
         fields = models.execute_kw(
-            ODOO_DB, uid, ODOO_PASSWORD,
+            st.session_state.odoo_credentials['db'], uid, st.session_state.odoo_credentials['password'],
             model_name, 'fields_get',
             [], {'attributes': ['string', 'type', 'required']}
         )

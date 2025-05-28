@@ -57,8 +57,8 @@ def get_google_credentials():
         return None
 
 # Export commonly used secrets
-ODOO_URL = get_secret("ODOO_URL")
-ODOO_DB = get_secret("ODOO_DB")
+# ODOO_URL = get_secret("ODOO_URL")
+# ODOO_DB = get_secret("ODOO_DB")
 ODOO_USERNAME = get_secret("ODOO_USERNAME")
 ODOO_PASSWORD = get_secret("ODOO_PASSWORD")
 OPENAI_API_KEY = get_secret("OPENAI_API_KEY")

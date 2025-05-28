@@ -149,9 +149,6 @@ st.set_page_config(
 def validate_session():
     """
     Validates the current session and handles expiry
-    
-    Returns:
-        True if session is valid, False if expired or not logged in
     """
     from session_manager import SessionManager
     
@@ -164,6 +161,10 @@ def validate_session():
     
     # Check if logged in
     if not st.session_state.get("logged_in", False):
+        return False
+    
+    # Check if we have Odoo credentials
+    if "odoo_credentials" not in st.session_state:
         return False
     
     # Check for session expiry
@@ -200,6 +201,15 @@ def render_sidebar():
     if expiry:
         st.sidebar.write("Session expires at:", expiry.strftime("%Y-%m-%d %H:%M:%S"))
     st.sidebar.markdown("---")
+    # ─── Always‑visible debug info ──────────────────────────────────────
+    st.sidebar.markdown("#### User Info:")
+    if st.session_state.get("logged_in", False):
+        user_name = st.session_state.get("odoo_credentials", {}).get("name", "Unknown")
+        user_email = st.session_state.get("user", {}).get("username", "None")
+        st.sidebar.write(f"**Name:** {user_name}")
+        st.sidebar.write(f"**Email:** {user_email}")
+    else:
+        st.sidebar.write("Not logged in")
 
     # ─── Navigation & Auth (only if logged in) ───────────────────────────
     if st.session_state.get("logged_in", False):
@@ -414,63 +424,80 @@ def login_page():
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         st.title("Welcome")
-        st.subheader("Login to Task Management System")
+        st.subheader("Login with your Odoo credentials")
 
         with st.form("login_form"):
-            username = st.text_input("Username", key="username_input")
+            email = st.text_input("Email", key="email_input", placeholder="your.email@company.com")
             password = st.text_input("Password", type="password", key="password_input")
+            odoo_url = st.text_input("Odoo URL", key="odoo_url_input", 
+                                    value="https://prezlab-staging-19128678.dev.odoo.com",
+                                    help="Enter your Odoo instance URL")
             submit = st.form_submit_button("Login")
 
             if not submit:
                 return
 
-            # 1) Require both fields
-            if not username or not password:
-                st.warning("Please enter both username and password.")
+            # 1) Require all fields
+            if not email or not password or not odoo_url:
+                st.warning("Please enter all fields.")
                 return
 
-            # 2) Validate against multiple user credentials
-            authenticated = False
-            
-            # First check the admin user (backward compatibility)
-            valid_admin_user = get_secret("APP_USERNAME", "admin")
-            valid_admin_pass = get_secret("APP_PASSWORD", "password")
-            if username == valid_admin_user and password == valid_admin_pass:
-                authenticated = True
-            
-            # Check additional users
-            for prefix in ["USER_karmel", "USER_abdelrauof"]:
-                user = get_secret(f"{prefix}_USERNAME")
-                pwd = get_secret(f"{prefix}_PASSWORD")
-                if username == user and password == pwd:
-                    authenticated = True
-                    break
-            
-            if not authenticated:
-                st.error("Invalid credentials. Please try again.")
-                return
-
-            # 3) Log into Streamlit session
-            SessionManager.login(username, expiry_hours=8)
-
-            # 4) Attempt Odoo authentication exactly once
+            # 2) Try to authenticate with Odoo
             try:
-                with st.spinner("Connecting to Odoo…"):
-                    uid, models = get_odoo_connection(force_refresh=True)
-
+                import xmlrpc.client
+                
+                # Extract database name from URL if it's a standard Odoo URL
+                import re
+                db_match = re.search(r'https://([^.]+)(?:-\d+)?\.', odoo_url)
+                if db_match:
+                    odoo_db = db_match.group(1)
+                    # Handle staging/production URLs
+                    if '-staging-' in odoo_url:
+                        db_parts = odoo_url.split('.')[0].split('//')[-1]
+                        odoo_db = db_parts
+                else:
+                    # Fallback - ask user to provide DB name
+                    st.error("Could not extract database name from URL. Please contact support.")
+                    return
+                
+                # Test connection
+                common = xmlrpc.client.ServerProxy(f"{odoo_url}/xmlrpc/2/common", allow_none=True)
+                uid = common.authenticate(odoo_db, email, password, {})
+                
                 if not uid:
-                    # Explicit error if Odoo.authenticate returned False
-                    raise RuntimeError("authenticate() returned False")
-
-                # Success path
-                st.success("Login successful!")
+                    st.error("Invalid credentials. Please check your email and password.")
+                    return
+                
+                # Get user's name from Odoo
+                models = xmlrpc.client.ServerProxy(f"{odoo_url}/xmlrpc/2/object", allow_none=True)
+                user_info = models.execute_kw(
+                    odoo_db, uid, password,
+                    'res.users', 'read',
+                    [[uid]],
+                    {'fields': ['name', 'email']}
+                )
+                
+                user_name = user_info[0]['name'] if user_info else email
+                
+                # Store Odoo credentials in session state
+                st.session_state.odoo_credentials = {
+                    'url': odoo_url,
+                    'db': odoo_db,
+                    'email': email,
+                    'password': password,
+                    'uid': uid,
+                    'name': user_name
+                }
+                
+                # Log into Streamlit session using email as username
+                SessionManager.login(email, expiry_hours=8)
+                
+                st.success(f"Welcome, {user_name}!")
                 st.rerun()
-
+                
             except Exception as e:
-                # Show full error, log stack trace, and rollback Streamlit login
-                st.error(f"Odoo authentication failed: {type(e).__name__}: {e}")
+                st.error(f"Connection failed: {str(e)}")
                 logger.exception("Odoo login error")
-                SessionManager.logout()
                 return
 
 

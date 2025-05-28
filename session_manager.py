@@ -105,8 +105,10 @@ class SessionManager:
         st.session_state.login_time = login_time
         st.session_state.session_expiry = session_expiry
         st.session_state.user = {
-            "username": username,
+            "username": username,  # This will now be the email
+            "email": username,     # Add this for clarity
             "session_id": str(uuid.uuid4()),
+            "name": st.session_state.odoo_credentials.get('name', username)
         }
 
         # ------------------------------------------------------------
