@@ -722,15 +722,14 @@ def adhoc_parent_task_page():
                 
                 target_language_parent = st.selectbox(
                     "Target Language", 
-                    target_language_options if target_language_options else [""],
-                    index=default_target_lang_idx,
+                    [""] + target_language_options if target_language_options else [""],
+                    index=default_target_lang_idx if default_target_lang_idx else 0,
                     help="Select the target language for this task"
                 )
-
             with col2:
                 client_success_exec_options = get_client_success_executives_odoo(models, uid)
                 if client_success_exec_options:
-                    exec_options = [(user['id'], user['name']) for user in client_success_exec_options]
+                    exec_options = [(None, "")] + [(user['id'], user['name']) for user in client_success_exec_options]
                     client_success_executive = st.selectbox(
                         "Client Success Executive", 
                         options=exec_options, 
@@ -744,10 +743,12 @@ def adhoc_parent_task_page():
         with st.expander("Guidelines", expanded=False):
             guidelines_options = get_guidelines_odoo(models, uid)
             if guidelines_options:
+                # Add empty option at the beginning
+                guidelines_options_with_empty = [(None, "")] + guidelines_options
                 # Use format_func to display the name while storing the tuple
                 guidelines_parent = st.selectbox(
                     "Guidelines", 
-                    options=guidelines_options,
+                    options=guidelines_options_with_empty,
                     format_func=lambda x: x[1]  # Display the name part
                 )
             else:
@@ -798,7 +799,19 @@ def adhoc_parent_task_page():
             if not parent_task_title:
                 st.error("Please enter a parent task title.")
                 return
+            
+            # Check if required fields are selected (not None or empty)
+            if not target_language_parent:
+                st.error("Please select a target language.")
+                return
                 
+            if client_success_executive is None or (isinstance(client_success_executive, tuple) and client_success_executive[0] is None):
+                st.error("Please select a client success executive.")
+                return
+                
+            if guidelines_parent is None or (isinstance(guidelines_parent, tuple) and guidelines_parent[0] is None):
+                st.error("Please select guidelines.")
+                return
             # Save to session state
             st.session_state.adhoc_parent_task_title = parent_task_title
             st.session_state.adhoc_target_language = target_language_parent
@@ -965,10 +978,11 @@ def adhoc_subtask_page():
         with col1:
             service_category_1_options = get_service_category_1_options(models, uid)
             if service_category_1_options:
+                # Add empty option as first choice
                 service_category_1 = st.selectbox(
                     "Service Category 1", 
-                    options=service_category_1_options,
-                    format_func=lambda x: x[1] if isinstance(x, tuple) and len(x) > 1 else str(x)
+                    options=[None] + service_category_1_options,
+                    format_func=lambda x: "" if x is None else (x[1] if isinstance(x, tuple) and len(x) > 1 else str(x))
                 )
             else:
                 # Fallback to text input with warning
@@ -982,10 +996,11 @@ def adhoc_subtask_page():
         with col2:
             service_category_2_options = get_service_category_2_options(models, uid)
             if service_category_2_options:
+                # Add empty option as first choice
                 service_category_2 = st.selectbox(
                     "Service Category 2", 
-                    options=service_category_2_options,
-                    format_func=lambda x: x[1] if isinstance(x, tuple) and len(x) > 1 else str(x)
+                    options=[None] + service_category_2_options,
+                    format_func=lambda x: "" if x is None else (x[1] if isinstance(x, tuple) and len(x) > 1 else str(x))
                 )
             else:
                 # Fallback to text input with warning
@@ -1000,9 +1015,14 @@ def adhoc_subtask_page():
         client_due_date_subtask = st.date_input("Client Due Date (Subtask)", value=date.today() + pd.Timedelta(days=5))
         
         # Submit options
+        # Submit options
         col1, col2 = st.columns(2)
         with col1:
-            next_subtask = st.form_submit_button("Save & Next Subtask")
+            # Only show "Save & Next Subtask" if there are more subtasks
+            if idx < len(so_items) - 1:
+                next_subtask = st.form_submit_button("Save & Next Subtask")
+            else:
+                next_subtask = False
         with col2:
             if idx == len(so_items) - 1:
                 finish_all = st.form_submit_button("Finish & Submit All")
@@ -1082,7 +1102,10 @@ def finalize_adhoc_subtasks():
                 return
         
         # Handle user ID
-        user_id = client_success_executive[0] if isinstance(client_success_executive, tuple) else client_success_executive
+        user_id = client_success_executive[0] if isinstance(client_success_executive, tuple) and client_success_executive[0] is not None else client_success_executive
+        if user_id is None:
+            st.error("Invalid client success executive selection")
+            return
         if not isinstance(user_id, int):
             try:
                 user_id = int(user_id)
@@ -1365,14 +1388,14 @@ def retainer_parent_task_page():
         with col1:
             target_language_options = get_target_languages_odoo(models, uid)
             if target_language_options:
-                retainer_target_language = st.selectbox("Target Language", target_language_options)
+                retainer_target_language = st.selectbox("Target Language", [""] + target_language_options)
             else:
                 retainer_target_language = st.text_input("Target Language")
         
         with col2:
             client_success_exec_options = get_client_success_executives_odoo(models, uid)
             if client_success_exec_options:
-                exec_options = [(user['id'], user['name']) for user in client_success_exec_options]
+                exec_options = [(None, "")] + [(user['id'], user['name']) for user in client_success_exec_options]
                 retainer_client_success_exec = st.selectbox("Client Success Executive", exec_options, format_func=lambda x: x[1])
             else:
                 retainer_client_success_exec = st.text_input("Client Success Executive")
@@ -1381,10 +1404,12 @@ def retainer_parent_task_page():
         with st.expander("Guidelines", expanded=False):
             guidelines_options = get_guidelines_odoo(models, uid)
             if guidelines_options:
+                # Add empty option at the beginning
+                guidelines_options_with_empty = [(None, "")] + guidelines_options
                 # Use format_func to display only the name while storing the tuple
                 retainer_guidelines = st.selectbox(
                     "Guidelines", 
-                    options=guidelines_options,
+                    options=guidelines_options_with_empty,
                     format_func=lambda x: x[1]  # Display the name part
                 )
             else:
@@ -1413,6 +1438,19 @@ def retainer_parent_task_page():
             # Validate input
             if not parent_project or not parent_task_title or not retainer_customer:
                 st.error("Please fill in all required fields.")
+                return
+            
+            # Check if required dropdowns are selected
+            if not retainer_target_language:
+                st.error("Please select a target language.")
+                return
+                
+            if retainer_client_success_exec is None or (isinstance(retainer_client_success_exec, tuple) and retainer_client_success_exec[0] is None):
+                st.error("Please select a client success executive.")
+                return
+                
+            if retainer_guidelines is None or (isinstance(retainer_guidelines, tuple) and retainer_guidelines[0] is None):
+                st.error("Please select guidelines.")
                 return
                 
             # Save to session state
@@ -1481,23 +1519,25 @@ def retainer_subtask_page():
         with col1:
             service_category_1_options = get_service_category_1_options(models, uid)
             if service_category_1_options:
+                # Add empty option as first choice
                 retainer_service_category_1 = st.selectbox(
                     "Service Category 1", 
-                    options=service_category_1_options,
-                    format_func=lambda x: x[1] if isinstance(x, tuple) and len(x) > 1 else str(x)
+                    options=[None] + service_category_1_options,
+                    format_func=lambda x: "" if x is None else (x[1] if isinstance(x, tuple) and len(x) > 1 else str(x))
                 )
             else:
                 retainer_service_category_1 = st.text_input("Service Category 1")
             
             no_of_design_units_sc1 = st.number_input("No. of Design Units SC1", min_value=0, step=1)
-        
+
         with col2:
             service_category_2_options = get_service_category_2_options(models, uid)
             if service_category_2_options:
+                # Add empty option as first choice
                 retainer_service_category_2 = st.selectbox(
                     "Service Category 2", 
-                    options=service_category_2_options,
-                    format_func=lambda x: x[1] if isinstance(x, tuple) and len(x) > 1 else str(x)
+                    options=[None] + service_category_2_options,
+                    format_func=lambda x: "" if x is None else (x[1] if isinstance(x, tuple) and len(x) > 1 else str(x))
                 )
             else:
                 retainer_service_category_2 = st.text_input("Service Category 2")
@@ -1537,7 +1577,10 @@ def retainer_subtask_page():
                     return
             
             # Handle user ID
-            user_id = retainer_client_success_exec[0] if isinstance(retainer_client_success_exec, tuple) else retainer_client_success_exec
+            user_id = retainer_client_success_exec[0] if isinstance(retainer_client_success_exec, tuple) and retainer_client_success_exec[0] is not None else retainer_client_success_exec
+            if user_id is None:
+                st.error("Invalid client success executive selection")
+                return
             if not isinstance(user_id, int):
                 try:
                     user_id = int(user_id)
@@ -1584,12 +1627,12 @@ def retainer_subtask_page():
                     if retainer_guidelines:
                         if isinstance(retainer_guidelines, tuple) and len(retainer_guidelines) > 1:
                             # Extract the ID (first element of the tuple)
-                            parent_task_data["x_studio_guidelines"] = retainer_guidelines[0]
+                            if retainer_guidelines[0] is not None:
+                                parent_task_data["x_studio_guidelines"] = retainer_guidelines[0]
                         elif isinstance(retainer_guidelines, int):
                             parent_task_data["x_studio_guidelines"] = retainer_guidelines
                         else:
                             logger.warning(f"Guidelines not in expected format: {retainer_guidelines}")
-                    
                     # Format dates correctly to avoid the microseconds issue
                     if retainer_request_receipt_dt:
                         parent_task_data["x_studio_request_receipt_date_time"] = retainer_request_receipt_dt.strftime("%Y-%m-%d %H:%M:%S")
@@ -1644,7 +1687,7 @@ def retainer_subtask_page():
                     # Handle service category 1
                     if retainer_service_category_1:
                         if isinstance(retainer_service_category_1, tuple) and len(retainer_service_category_1) > 1:
-                            if retainer_service_category_1[0] != -1:
+                            if retainer_service_category_1[0] is not None and retainer_service_category_1[0] != -1:
                                 subtask_data["x_studio_service_category_1"] = retainer_service_category_1[0]
                             else:
                                 logger.warning(f"Skipping invalid service_category_1 ID: {retainer_service_category_1}")
@@ -1656,7 +1699,7 @@ def retainer_subtask_page():
                     # Handle service category 2
                     if retainer_service_category_2:
                         if isinstance(retainer_service_category_2, tuple) and len(retainer_service_category_2) > 1:
-                            if retainer_service_category_2[0] != -1:
+                            if retainer_service_category_2[0] is not None and retainer_service_category_2[0] != -1:
                                 subtask_data["x_studio_service_category_2"] = retainer_service_category_2[0]
                             else:
                                 logger.warning(f"Skipping invalid service_category_2 ID: {retainer_service_category_2}")
