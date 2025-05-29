@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 import openai  # Import the entire openai module instead of OpenAI class
 from config import get_secret
 import inspect
+import streamlit as st
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -29,24 +30,35 @@ import inspect
 
 # Debug function to track OpenAI setup
 def debug_openai_setup():
+    """Debug function that outputs to both logger and Streamlit UI"""
     logger.info("=" * 50)
     logger.info("DEBUGGING OPENAI SETUP")
     
-    # Check API key
-    api_key = get_secret("OPENAI_API_KEY")
-    if api_key:
-        logger.info(f"API key found, starts with: {api_key[:8]}...")
-        logger.info(f"API key length: {len(api_key)}")
-    else:
-        logger.error("NO API KEY FOUND!")
-    
-    # Check if OpenAI is installed
-    try:
-        logger.info(f"OpenAI module path: {inspect.getfile(openai)}")
-        if hasattr(openai, '__version__'):
-            logger.info(f"OpenAI version: {openai.__version__}")
-    except Exception as e:
-        logger.error(f"Error checking OpenAI module: {e}")
+    # Also show in Streamlit UI
+    if 'openai_debug_shown' not in st.session_state:
+        st.session_state.openai_debug_shown = True
+        with st.expander("🔍 OpenAI Debug Info", expanded=True):
+            # Check API key
+            api_key = get_secret("OPENAI_API_KEY")
+            if api_key:
+                st.success(f"✅ API key found, starts with: {api_key[:8]}...")
+                st.info(f"API key length: {len(api_key)}")
+                logger.info(f"API key found, starts with: {api_key[:8]}...")
+                logger.info(f"API key length: {len(api_key)}")
+            else:
+                st.error("❌ NO API KEY FOUND!")
+                logger.error("NO API KEY FOUND!")
+            
+            # Check if OpenAI is installed
+            try:
+                st.write(f"OpenAI module path: {inspect.getfile(openai)}")
+                logger.info(f"OpenAI module path: {inspect.getfile(openai)}")
+                if hasattr(openai, '__version__'):
+                    st.write(f"OpenAI version: {openai.__version__}")
+                    logger.info(f"OpenAI version: {openai.__version__}")
+            except Exception as e:
+                st.error(f"Error checking OpenAI module: {e}")
+                logger.error(f"Error checking OpenAI module: {e}")
     
     logger.info("=" * 50)
 
@@ -68,11 +80,18 @@ try:
         try:
             models = client.models.list()
             logger.info(f"API test successful! Available models: {len(models.data)}")
+            
+            # Show success in UI
+            if 'openai_debug_shown' in st.session_state:
+                st.success(f"✅ API test successful! Available models: {len(list(models.data))}")
         except Exception as test_err:
             logger.error(f"API test failed: {test_err}")
+            if 'openai_debug_shown' in st.session_state:
+                st.error(f"❌ API test failed: {test_err}")
     except ImportError:
         # Fallback to older SDK
         logger.info("New SDK import failed, trying older OpenAI SDK pattern")
+        st.warning("New SDK import failed, trying older OpenAI SDK pattern")
         openai.api_key = api_key
         client = openai  # Use openai module directly as client
         logger.info("Using older OpenAI SDK pattern")
@@ -81,6 +100,7 @@ try:
     logger.info(f"Default model set to: {DEFAULT_MODEL}")
 except Exception as e:
     logger.error(f"OpenAI initialization failed: {e}", exc_info=True)
+    st.error(f"❌ OpenAI initialization failed: {e}")
     client = None
 
 def safe_api_call(func, *args, retries=3, delay=7, **kwargs):
