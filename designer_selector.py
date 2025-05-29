@@ -213,9 +213,6 @@ def suggest_best_designer(request_info: str, designers_df: pd.DataFrame, max_des
     else:
         logger.info("Client doesn't have direct api_key attribute")
 
-    if not openai.api_key:
-        logger.error("OpenAI API key not set")
-        return "Error: OpenAI API not available. Please check your configuration."
     
     if designers_df.empty:
         logger.warning("Empty designers DataFrame provided")
@@ -364,9 +361,6 @@ def suggest_best_designer_available(request_info: str, available_designers_df: p
     Returns:
         String with the best designer suggestion
     """
-    if not openai.api_key:
-        logger.error("OpenAI API key not set")
-        return "Error: OpenAI API not available. Please check your configuration."
     
     if available_designers_df.empty and not_available_designers_df.empty:
         logger.warning("Empty designers DataFrames provided")
@@ -431,9 +425,6 @@ def rank_designers_by_skill_match(request_info: str, designers_df: pd.DataFrame)
     Returns:
         DataFrame with designers ranked by match score
     """
-    if not openai.api_key:
-        logger.error("OpenAI API key not set")
-        return designers_df.assign(match_score=0.0, match_reason="API not available")
     
     if designers_df.empty:
         logger.warning("Empty designers DataFrame provided")
@@ -444,15 +435,29 @@ def rank_designers_by_skill_match(request_info: str, designers_df: pd.DataFrame)
         designers_summary = prepare_compact_designer_summary(designers_df, max_designers=len(designers_df))
         
         # Prepare prompt
+        # Replace the system_prompt in rank_designers_by_skill_match with:
         system_prompt = """You are a design team coordinator who needs to rank designers based on their skills.
-Analyze the service request details and rank each designer with a score from 0 to 100.
-Return your analysis in JSON format with an array of objects, each containing:
-{
-  "name": "Designer Name",
-  "score": 85,
-  "reason": "Brief explanation of score"
-}
-Include ALL designers from the provided list."""
+        Analyze the service request details and rank each designer with a meaningful score from 0 to 100.
+        AVOID giving everyone the same score. Differentiate between designers based on their skills.
+
+        Return your analysis in this EXACT JSON format:
+        {
+        "designers": [
+            {
+            "name": "Designer Name",
+            "score": 85,
+            "reason": "Brief explanation of score"
+            },
+            {
+            "name": "Another Designer",
+            "score": 72,
+            "reason": "Different explanation"
+            }
+        ]
+        }
+
+        IMPORTANT: Include ALL designers from the provided list and give reasonable scores that reflect skill match.
+        DO NOT give everyone a 0% match - use the full 0-100 range with proper differentiation."""
         
         user_prompt = f"""Based on the following service request details and the available designer profiles, 
 rank each designer on their match to the requirements:
