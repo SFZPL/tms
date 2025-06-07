@@ -4,8 +4,8 @@ pandas==2.0.3
 python-dotenv==1.0.0
 openpyxl==3.1.2
 XlsxWriter==3.1.2
-# OpenAI API - Updated to newer version
-openai==1.35.3
+# OpenAI API - Downgrade to older version
+openai==0.28.0
 # Google API with fixed dependency versions
 google-auth==2.23.0
 google-auth-oauthlib==1.1.0
