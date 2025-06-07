@@ -88,12 +88,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-import streamlit as st, config
-st.write("🔍 st.secrets keys:", list(st.secrets.keys()))
-st.write("🔑 OPENAI_API_KEY loaded?", bool(config.OPENAI_API_KEY))
-
-
-
 def add_debug_sidebar(debugger: SystemDebugger):
     """
     Add a debug sidebar option to the existing sidebar
