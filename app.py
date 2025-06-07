@@ -181,7 +181,136 @@ def validate_session():
                 return False
     
     return True
+# Add a more comprehensive OpenAI debug in the auth_debug_page function:
+def add_openai_debug_section():
+    """Add this to your auth_debug_page() function"""
+    
+    st.subheader("OpenAI API Testing")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.write("**Configuration Status:**")
+        
+        # Check API key
+        from config import get_secret
+        api_key = get_secret("OPENAI_API_KEY")
+        if api_key:
+            st.success(f"✅ API Key configured ({len(api_key)} chars)")
+            st.text(f"Key preview: {api_key[:15]}...{api_key[-4:]}")
+        else:
+            st.error("❌ No API key found")
+            
+        # Check model setting
+        model = get_secret("OPENAI_MODEL", "gpt-4")
+        st.info(f"Default model: {model}")
+        
+        # Check OpenAI version
+        try:
+            import openai
+            if hasattr(openai, '__version__'):
+                st.info(f"OpenAI library version: {openai.__version__}")
+            else:
+                st.warning("Cannot determine OpenAI version")
+        except ImportError:
+            st.error("OpenAI library not installed")
+    
+    with col2:
+        st.write("**API Tests:**")
+        
+        # Simple API test
+        if st.button("Test Simple API Call", key="test_openai_simple"):
+            test_openai_simple()
+            
+        # Test designer matching
+        if st.button("Test Designer Matching", key="test_designer_ai"):
+            test_designer_matching()
+            
+        # Test with different models
+        model_test = st.selectbox(
+            "Test with model:",
+            ["gpt-3.5-turbo", "gpt-4", "gpt-4-turbo-preview"],
+            key="model_test_select"
+        )
+        
+        if st.button("Test Selected Model", key="test_selected_model"):
+            test_model(model_test)
 
+def test_openai_simple():
+    """Simple OpenAI API test"""
+    try:
+        import openai
+        from config import get_secret
+        
+        api_key = get_secret("OPENAI_API_KEY")
+        openai.api_key = api_key
+        
+        with st.spinner("Testing API..."):
+            response = openai.ChatCompletion.create(
+                model="gpt-3.5-turbo",
+                messages=[{"role": "user", "content": "Say 'Hello from OpenAI!'"}],
+                max_tokens=20
+            )
+            
+            st.success(f"Response: {response.choices[0].message.content}")
+            st.json({
+                "model": response.model,
+                "usage": response.usage.to_dict() if hasattr(response.usage, 'to_dict') else dict(response.usage)
+            })
+    except Exception as e:
+        st.error(f"Error: {str(e)}")
+        if "insufficient_quota" in str(e):
+            st.warning("You need to add credits to your OpenAI account")
+        elif "invalid_api_key" in str(e):
+            st.warning("Your API key is invalid")
+
+def test_designer_matching():
+    """Test the designer matching functionality"""
+    try:
+        from designer_selector import suggest_best_designer, load_designers
+        
+        # Load designers
+        designers_df = load_designers()
+        if designers_df.empty:
+            st.error("No designers loaded!")
+            return
+            
+        st.info(f"Loaded {len(designers_df)} designers")
+        
+        # Test request
+        test_request = "Need a PowerPoint presentation in Arabic for a corporate client"
+        
+        with st.spinner("Testing designer matching..."):
+            suggestion = suggest_best_designer(test_request, designers_df, max_designers=3)
+            
+        st.success("Designer matching completed!")
+        st.text_area("Suggestion:", suggestion, height=200)
+        
+    except Exception as e:
+        st.error(f"Error in designer matching: {str(e)}")
+
+def test_model(model_name):
+    """Test a specific model"""
+    try:
+        import openai
+        from config import get_secret
+        
+        api_key = get_secret("OPENAI_API_KEY")
+        openai.api_key = api_key
+        
+        with st.spinner(f"Testing {model_name}..."):
+            response = openai.ChatCompletion.create(
+                model=model_name,
+                messages=[{"role": "user", "content": "What model are you?"}],
+                max_tokens=50
+            )
+            
+            st.success(f"Response: {response.choices[0].message.content}")
+            
+    except Exception as e:
+        st.error(f"Error testing {model_name}: {str(e)}")
+        if "model_not_found" in str(e):
+            st.warning(f"Your API key doesn't have access to {model_name}")
 # -------------------------------
 # SIDEBAR
 # -------------------------------
@@ -284,6 +413,70 @@ def render_sidebar():
         except Exception as e:
             st.sidebar.error(f"RPC error: {type(e).__name__}: {e}")
 
+    # After the existing test buttons, add:
+    if st.sidebar.button("Test OpenAI API"):
+        with st.spinner("Testing OpenAI connection..."):
+            # Import what we need
+            try:
+                import openai
+                from config import get_secret
+                
+                api_key = get_secret("OPENAI_API_KEY")
+                if not api_key:
+                    st.sidebar.error("❌ No API key found in secrets!")
+                else:
+                    st.sidebar.success(f"✅ API key found: {api_key[:8]}...{api_key[-4:]}")
+                    
+                    # Test the actual API call
+                    try:
+                        # Check which version of OpenAI we're using
+                        import openai
+                        if hasattr(openai, '__version__'):
+                            st.sidebar.info(f"OpenAI version: {openai.__version__}")
+                        
+                        # For openai 0.28.0 (your current version)
+                        if hasattr(openai, 'ChatCompletion'):
+                            openai.api_key = api_key
+                            response = openai.ChatCompletion.create(
+                                model="gpt-3.5-turbo",  # Use gpt-3.5-turbo for testing (cheaper)
+                                messages=[
+                                    {"role": "system", "content": "You are a test bot."},
+                                    {"role": "user", "content": "Respond with 'API working!' and nothing else."}
+                                ],
+                                max_tokens=10,
+                                temperature=0
+                            )
+                            result = response.choices[0].message.content
+                            st.sidebar.success(f"✅ API Response: {result}")
+                        else:
+                            # For newer versions
+                            from openai import OpenAI
+                            client = OpenAI(api_key=api_key)
+                            response = client.chat.completions.create(
+                                model="gpt-3.5-turbo",
+                                messages=[
+                                    {"role": "system", "content": "You are a test bot."},
+                                    {"role": "user", "content": "Respond with 'API working!' and nothing else."}
+                                ],
+                                max_tokens=10,
+                                temperature=0
+                            )
+                            result = response.choices[0].message.content
+                            st.sidebar.success(f"✅ API Response: {result}")
+                            
+                    except Exception as api_error:
+                        st.sidebar.error(f"❌ API Error: {str(api_error)}")
+                        if "insufficient_quota" in str(api_error):
+                            st.sidebar.warning("💳 You've exceeded your API quota. Add credits to your OpenAI account.")
+                        elif "invalid_api_key" in str(api_error):
+                            st.sidebar.warning("🔑 Invalid API key. Check your OpenAI API key.")
+                        else:
+                            st.sidebar.info("Check the error message above for details.")
+                            
+            except ImportError as e:
+                st.sidebar.error(f"❌ Import Error: {e}")
+                st.sidebar.info("Make sure 'openai' is installed: pip install openai==0.28.0")
+
     st.sidebar.markdown("---")
     st.sidebar.caption("© 2025 Task Management System")
 
@@ -383,7 +576,119 @@ def auth_debug_page():
         except Exception as e:
             st.error(f"❌ Error: {str(e)}")
             st.code(traceback.format_exc())
-    
+    # In app.py, add this section to your auth_debug_page() function:
+
+    # After the existing sections (Supabase Connection Test, Encryption Test, etc.), add:
+
+    # OpenAI API Testing
+    st.subheader("OpenAI API Test")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.write("**Configuration:**")
+        
+        # Check API key
+        api_key = get_secret("OPENAI_API_KEY")
+        if api_key:
+            st.success(f"✅ API Key found")
+            st.code(f"{api_key[:20]}...{api_key[-4:]}")
+            
+            # Validate key format
+            if api_key.startswith("sk-") and len(api_key) > 40:
+                st.success("✅ Key format looks valid")
+            else:
+                st.warning("⚠️ Key format might be invalid")
+        else:
+            st.error("❌ No API key found")
+            st.info("Add OPENAI_API_KEY to your secrets.toml")
+        
+        # Show model configuration
+        model = get_secret("OPENAI_MODEL", "gpt-4")
+        st.info(f"Default model: {model}")
+        
+        # Show OpenAI version
+        try:
+            import openai
+            st.info(f"OpenAI library: v{getattr(openai, '__version__', 'unknown')}")
+        except ImportError:
+            st.error("❌ OpenAI library not installed")
+
+    with col2:
+        st.write("**Quick Tests:**")
+        
+        if st.button("Test OpenAI Connection"):
+            try:
+                import openai
+                openai.api_key = api_key
+                
+                with st.spinner("Calling OpenAI API..."):
+                    # For openai 0.28.0
+                    response = openai.ChatCompletion.create(
+                        model="gpt-3.5-turbo",
+                        messages=[
+                            {"role": "user", "content": "Respond with 'OpenAI is working!' and nothing else."}
+                        ],
+                        max_tokens=10,
+                        temperature=0
+                    )
+                    
+                    result = response.choices[0].message.content
+                    st.success(f"✅ API Response: {result}")
+                    
+                    # Show token usage
+                    if hasattr(response, 'usage'):
+                        st.json({
+                            "tokens_used": response.usage.total_tokens,
+                            "model": response.model,
+                            "response_id": response.id
+                        })
+                        
+            except Exception as e:
+                st.error(f"❌ Error: {str(e)}")
+                
+                # Specific error handling
+                error_msg = str(e).lower()
+                if "insufficient_quota" in error_msg or "exceeded your current quota" in error_msg:
+                    st.error("💳 **No credits!** Add funds to your OpenAI account at https://platform.openai.com/account/billing")
+                elif "invalid_api_key" in error_msg or "incorrect api key" in error_msg:
+                    st.error("🔑 **Invalid API key!** Get a new key at https://platform.openai.com/api-keys")
+                elif "model_not_found" in error_msg:
+                    st.error("🤖 **Model not available!** Your API key might not have access to this model.")
+                else:
+                    st.code(str(e))
+        
+        if st.button("Test Designer Selector"):
+            try:
+                from designer_selector import load_designers, simple_skill_match
+                
+                # Load designers
+                designers_df = load_designers()
+                if not designers_df.empty:
+                    st.success(f"✅ Loaded {len(designers_df)} designers")
+                    
+                    # Test skill matching
+                    test_request = "PowerPoint presentation in Arabic"
+                    designer = designers_df.iloc[0]
+                    score = simple_skill_match(test_request, designer)
+                    
+                    st.info(f"Test match score for {designer['Name']}: {score}%")
+                else:
+                    st.error("❌ No designers loaded")
+                    
+            except Exception as e:
+                st.error(f"❌ Designer selector error: {str(e)}")
+
+    # Add a log viewer for OpenAI-specific logs
+    with st.expander("OpenAI Debug Logs"):
+        try:
+            with open('designer_selector.log', 'r') as f:
+                logs = f.readlines()
+                # Filter for OpenAI-related logs
+                openai_logs = [log for log in logs if 'openai' in log.lower() or 'api' in log.lower()]
+                st.text_area("Recent OpenAI logs:", '\n'.join(openai_logs[-20:]), height=200)
+        except:
+            st.info("No logs available")
     # Google Auth Actions
     st.subheader("Google Authentication Actions")
     
