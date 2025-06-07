@@ -7,6 +7,15 @@ if current_dir not in sys.path:
     sys.path.insert(0, current_dir)
 
 # Now try to import
+import streamlit as st
+# Set page config
+st.set_page_config(
+    page_title="Task Management System",
+    page_icon="📋",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
 try:
     from config import get_secret
 except ImportError as e:
@@ -28,7 +37,6 @@ from datetime import datetime, date, time
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 # ─── Third‑party ──────────────────────────────────────────────────────────────
-import streamlit as st
 import pandas as pd
 
 # ─── Local modules ───────────────────────────────────────────────────────────
@@ -94,16 +102,6 @@ ODOO_URL = get_secret("ODOO_URL")
 ODOO_DB = get_secret("ODOO_DB")
 ODOO_USERNAME = get_secret("ODOO_USERNAME") 
 ODOO_PASSWORD = get_secret("ODOO_PASSWORD")
-
-
-# Set page config
-st.set_page_config(
-    page_title="Task Management System",
-    page_icon="📋",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
-
 
 def add_debug_sidebar(debugger: SystemDebugger):
     """
