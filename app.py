@@ -88,6 +88,24 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+
+# Replace environment variables with secrets
+ODOO_URL = get_secret("ODOO_URL")
+ODOO_DB = get_secret("ODOO_DB")
+ODOO_USERNAME = get_secret("ODOO_USERNAME") 
+ODOO_PASSWORD = get_secret("ODOO_PASSWORD")
+
+
+# Set page config
+st.set_page_config(
+    page_title="Task Management System",
+    page_icon="📋",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+st.write("🔑 OPENAI_API_KEY loaded?", bool(config.OPENAI_API_KEY))
+
 def add_debug_sidebar(debugger: SystemDebugger):
     """
     Add a debug sidebar option to the existing sidebar
@@ -129,23 +147,6 @@ def setup_debugging(main_app):
     main_app.render_sidebar = modified_render_sidebar
     
     return debugger
-
-# Replace environment variables with secrets
-ODOO_URL = get_secret("ODOO_URL")
-ODOO_DB = get_secret("ODOO_DB")
-ODOO_USERNAME = get_secret("ODOO_USERNAME") 
-ODOO_PASSWORD = get_secret("ODOO_PASSWORD")
-
-
-# Set page config
-st.set_page_config(
-    page_title="Task Management System",
-    page_icon="📋",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
-
-st.write("🔑 OPENAI_API_KEY loaded?", bool(config.OPENAI_API_KEY))
 
 def validate_session():
     """
