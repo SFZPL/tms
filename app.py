@@ -104,7 +104,6 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-st.write("🔑 OPENAI_API_KEY loaded?", bool(config.OPENAI_API_KEY))
 
 def add_debug_sidebar(debugger: SystemDebugger):
     """
