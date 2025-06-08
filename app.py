@@ -22,7 +22,6 @@ from enhanced_prezlab_ui import (
   create_floating_action_button,
   COLORS
 )
-from prezlab_logo_enhancement import add_enhanced_logo, create_text_logo
 # Set page config
 st.set_page_config(
     page_title="Task Management System",
