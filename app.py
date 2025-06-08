@@ -8,20 +8,6 @@ if current_dir not in sys.path:
 
 # Now try to import
 import streamlit as st
-from enhanced_prezlab_ui import (
-  inject_enhanced_css,
-  create_animated_header,
-  create_glass_card,
-  create_metric_card,
-  create_task_card,
-  create_notification,
-  create_progress_steps,
-  animate_number,
-  style_form_container,
-  show_loading_animation,
-  create_floating_action_button,
-  COLORS
-)
 # Set page config
 st.set_page_config(
     page_title="Task Management System",
@@ -29,8 +15,6 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
-
-inject_enhanced_css()
 
 try:
     from config import get_secret
@@ -102,6 +86,7 @@ from designer_selector import (
     rank_designers_by_skill_match
 )
 
+from prezlab_ui import inject_custom_css, header, container, message, progress_steps, scribble, add_logo
 
 # ─── Logging ─────────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -333,183 +318,150 @@ def test_model(model_name):
 # SIDEBAR
 # -------------------------------
 def render_sidebar():
-    """Enhanced sidebar with modern UI"""
-    from enhanced_prezlab_ui import COLORS, create_notification
-    
-    # Custom sidebar styling
-    sidebar_css = f"""
-    <style>
-    section[data-testid="stSidebar"] {{
-        background: linear-gradient(180deg, {COLORS['navy']} 0%, {COLORS['dark_purple']} 100%);
-    }}
-    
-    section[data-testid="stSidebar"] .stMarkdown {{
-        color: white !important;
-    }}
-    
-    section[data-testid="stSidebar"] .stButton > button {{
-        background: rgba(255, 255, 255, 0.1);
-        border: 1px solid rgba(255, 255, 255, 0.2);
-        color: white;
-        transition: all 0.3s ease;
-    }}
-    
-    section[data-testid="stSidebar"] .stButton > button:hover {{
-        background: rgba(255, 255, 255, 0.2);
-        transform: translateX(5px);
-    }}
-    
-    /* User Profile Card */
-    .user-profile {{
-        background: rgba(255, 255, 255, 0.1);
-        border-radius: 16px;
-        padding: 1.5rem;
-        margin-bottom: 2rem;
-        text-align: center;
-        backdrop-filter: blur(10px);
-    }}
-    
-    .user-avatar {{
-        width: 80px;
-        height: 80px;
-        border-radius: 50%;
-        background: linear-gradient(135deg, {COLORS['coral']}, {COLORS['yellow']});
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        margin: 0 auto 1rem;
-        font-size: 2rem;
-        font-weight: 700;
-        color: white;
-        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
-    }}
-    </style>
-    """
-    st.sidebar.markdown(sidebar_css, unsafe_allow_html=True)
-    
-    # Logo
-    logo_html = f"""
-    <div style="text-align: center; margin-bottom: 2rem;">
-        <div style="
-            background: white;
-            width: 60px;
-            height: 60px;
-            border-radius: 16px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin: 0 auto;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
-        ">
-            <span style="color: {COLORS['primary_purple']}; font-size: 2rem; font-weight: 700;">P</span>
-        </div>
-        <h2 style="color: white; margin-top: 1rem; font-weight: 300;">PrezLab TMS</h2>
-    </div>
-    """
-    st.sidebar.markdown(logo_html, unsafe_allow_html=True)
-    
-    # User Profile
+    import xmlrpc.client
+    from config import get_secret
+    from session_manager import SessionManager
+
+    st.sidebar.title("Task Management")
+
+    # ─── Always‑visible debug info ──────────────────────────────────────────
+    st.sidebar.markdown("#### Debug Info:")
+    st.sidebar.write("Logged in:", st.session_state.get("logged_in", False))
+    st.sidebar.write("Username:", st.session_state.get("user", {}).get("username", "None"))
+    # Show session expiry if available
+    expiry = st.session_state.get("session_expiry")
+    if expiry:
+        st.sidebar.write("Session expires at:", expiry.strftime("%Y-%m-%d %H:%M:%S"))
+    st.sidebar.markdown("---")
+    # ─── Always‑visible debug info ──────────────────────────────────────
+    st.sidebar.markdown("#### User Info:")
     if st.session_state.get("logged_in", False):
-        user_name = st.session_state.get("odoo_credentials", {}).get("name", "User")
-        user_email = st.session_state.get("user", {}).get("username", "")
-        
-        profile_html = f"""
-        <div class="user-profile">
-            <div class="user-avatar">{user_name[0].upper()}</div>
-            <h4 style="color: white; margin: 0;">{user_name}</h4>
-            <p style="color: rgba(255, 255, 255, 0.7); font-size: 0.875rem; margin: 0.5rem 0;">{user_email}</p>
-            <div style="
-                display: inline-block;
-                background: {COLORS['green']};
-                width: 10px;
-                height: 10px;
-                border-radius: 50%;
-                margin-right: 0.5rem;
-            "></div>
-            <span style="color: rgba(255, 255, 255, 0.7); font-size: 0.875rem;">Online</span>
-        </div>
-        """
-        st.sidebar.markdown(profile_html, unsafe_allow_html=True)
-    
-    # Navigation Menu
-    st.sidebar.markdown("### 🏠 Navigation")
-    
-    menu_items = [
-        ("🏠", "Dashboard", "home"),
-        ("📋", "My Tasks", "tasks"),
-        ("👥", "Team", "team"),
-        ("📊", "Reports", "reports"),
-        ("⚙️", "Settings", "settings")
-    ]
-    
-    for icon, label, key in menu_items:
-        if st.sidebar.button(f"{icon} {label}", key=f"nav_{key}", use_container_width=True):
-            st.session_state.current_page = key
-            if key == "home":
-                # Clear flow data to return to main dashboard
-                from session_manager import SessionManager
-                SessionManager.clear_flow_data()
+        user_name = st.session_state.get("odoo_credentials", {}).get("name", "Unknown")
+        user_email = st.session_state.get("user", {}).get("username", "None")
+        st.sidebar.write(f"**Name:** {user_name}")
+        st.sidebar.write(f"**Email:** {user_email}")
+    else:
+        st.sidebar.write("Not logged in")
+
+    # ─── Navigation & Auth (only if logged in) ───────────────────────────
+    if st.session_state.get("logged_in", False):
+        # Navigation
+        st.sidebar.subheader("Navigation")
+        if st.sidebar.button("Home"):
+            SessionManager.clear_flow_data()
             st.rerun()
-    
-    # Google Services Status
-    st.sidebar.markdown("### 🔗 Integrations")
-    
-    gmail_ok = "google_gmail_creds" in st.session_state
-    drive_ok = "google_drive_creds" in st.session_state
-    
-    status_html = f"""
-    <div style="background: rgba(255, 255, 255, 0.1); border-radius: 12px; padding: 1rem; margin: 1rem 0;">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
-            <span style="color: white;">Gmail</span>
-            <div style="
-                width: 12px;
-                height: 12px;
-                border-radius: 50%;
-                background: {COLORS['success'] if gmail_ok else COLORS['danger']};
-            "></div>
-        </div>
-        <div style="display: flex; justify-content: space-between; align-items: center;">
-            <span style="color: white;">Google Drive</span>
-            <div style="
-                width: 12px;
-                height: 12px;
-                border-radius: 50%;
-                background: {COLORS['success'] if drive_ok else COLORS['danger']};
-            "></div>
-        </div>
-    </div>
-    """
-    st.sidebar.markdown(status_html, unsafe_allow_html=True)
-    
-    if not (gmail_ok and drive_ok):
-        if st.sidebar.button("🔗 Connect Services", use_container_width=True):
+
+        # Google Services
+        st.sidebar.subheader("Google Services")
+        gmail_ok = "google_gmail_creds" in st.session_state
+        drive_ok = "google_drive_creds" in st.session_state
+        status = "✅ Connected" if (gmail_ok and drive_ok) else "⚠️ Not connected"
+        if st.sidebar.button(f"Google Auth ({status})"):
             st.session_state.show_google_auth = True
             st.rerun()
+
+        # Odoo Connection
+        st.sidebar.subheader("Connection")
+        if st.sidebar.button("Reconnect to Odoo"):
+            with st.spinner("Reconnecting..."):
+                uid, models = get_odoo_connection(force_refresh=True)
+                if uid:
+                    st.sidebar.success("Reconnected successfully!")
+                else:
+                    st.sidebar.error("Failed to reconnect. Check logs.")
+        if st.sidebar.button("Logout"):
+            SessionManager.logout()
+            st.rerun()
+
+        # Admin Tools for 'admin' user
+        if st.session_state.user.get("username") == "admin":
+            st.sidebar.markdown("---")
+            st.sidebar.subheader("Admin Tools")
+            if st.sidebar.button("System Debug Dashboard"):
+                st.session_state.debug_mode = "system_debug"
+                st.rerun()
+            if st.sidebar.button("Auth Debug Dashboard"):
+                st.session_state.debug_mode = "auth_debug"
+                st.rerun()
+    else:
+        st.sidebar.info("Please log in to access navigation.")
+
+    # ─── Quick Debug (always visible) ─────────────────────────────────────
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("Quick Debug")
     
-    # Quick Actions
-    st.sidebar.markdown("### ⚡ Quick Actions")
-    
-    if st.sidebar.button("➕ New Task", use_container_width=True):
-        from session_manager import SessionManager
-        SessionManager.clear_flow_data()
-        st.rerun()
-    
-    # Footer
-    footer_html = """
-    <div style="
-        position: absolute;
-        bottom: 1rem;
-        left: 1rem;
-        right: 1rem;
-        text-align: center;
-        color: rgba(255, 255, 255, 0.5);
-        font-size: 0.75rem;
-    ">
-        <p>© 2025 PrezLab TMS</p>
-        <p>Made with ❤️ by PrezLab Team</p>
-    </div>
-    """
-    st.sidebar.markdown(footer_html, unsafe_allow_html=True)
+    if st.sidebar.button("Test Supabase"):
+        # your existing Supabase test code here...
+        pass
+
+    if st.sidebar.button("Test Encryption"):
+        # your existing Encryption test code here...
+        pass
+
+    if st.sidebar.button("Test Odoo Secrets"):
+        for key in ["ODOO_URL", "ODOO_DB", "ODOO_USERNAME", "ODOO_PASSWORD"]:
+            val = get_secret(key)
+            st.sidebar.write(f"**{key}** →", "✅ set" if val else "❌ EMPTY")
+
+    if st.sidebar.button("Test Odoo Connection"):
+        url = get_secret("ODOO_URL") + "/xmlrpc/2/common"
+        try:
+            uid = xmlrpc.client.ServerProxy(url).authenticate(
+                get_secret("ODOO_DB"),
+                get_secret("ODOO_USERNAME"),
+                get_secret("ODOO_PASSWORD"),
+                {}
+            )
+            st.sidebar.success(f"authenticate() → {uid!r}")
+        except Exception as e:
+            st.sidebar.error(f"RPC error: {type(e).__name__}: {e}")
+
+    # After the existing test buttons, add:
+    # Replace the OpenAI test button code in render_sidebar() with:
+
+    if st.sidebar.button("Test OpenAI API"):
+        with st.spinner("Testing OpenAI connection..."):
+            try:
+                from openai import OpenAI
+                from config import get_secret
+                
+                api_key = get_secret("OPENAI_API_KEY")
+                if not api_key:
+                    st.sidebar.error("❌ No API key found in secrets!")
+                else:
+                    st.sidebar.success(f"✅ API key found: {api_key[:8]}...{api_key[-4:]}")
+                    
+                    # Test the actual API call with NEW syntax
+                    try:
+                        # For OpenAI v1.0+
+                        client = OpenAI(api_key=api_key)
+                        response = client.chat.completions.create(
+                            model="gpt-3.5-turbo",
+                            messages=[
+                                {"role": "system", "content": "You are a test bot."},
+                                {"role": "user", "content": "Respond with 'API working!' and nothing else."}
+                            ],
+                            max_tokens=10,
+                            temperature=0
+                        )
+                        result = response.choices[0].message.content
+                        st.sidebar.success(f"✅ API Response: {result}")
+                        
+                    except Exception as api_error:
+                        st.sidebar.error(f"❌ API Error: {str(api_error)}")
+                        if "insufficient_quota" in str(api_error):
+                            st.sidebar.warning("💳 You've exceeded your API quota. Add credits to your OpenAI account.")
+                        elif "invalid_api_key" in str(api_error):
+                            st.sidebar.warning("🔑 Invalid API key. Check your OpenAI API key.")
+                        else:
+                            st.sidebar.info("Check the error message above for details.")
+                            
+            except ImportError as e:
+                st.sidebar.error(f"❌ Import Error: {e}")
+                st.sidebar.info("Make sure 'openai' is installed: pip install openai>=1.0.0")
+
+    st.sidebar.markdown("---")
+    st.sidebar.caption("© 2025 Task Management System")
 
 
 def auth_debug_page():
@@ -748,385 +700,127 @@ def auth_debug_page():
 # -------------------------------
 
 def login_page():
-    """Enhanced login page with modern UI"""
     from session_manager import SessionManager
-    from enhanced_prezlab_ui import (
-        inject_enhanced_css, create_animated_header, 
-        create_notification, style_form_container
-    )
-    
-    # Touch the session
+
+    # Touch the session so we don't expire mid‑login
     SessionManager.update_activity()
     
-    # Inject enhanced CSS
-    inject_enhanced_css()
-    style_form_container()
-    
-    # Create a centered login container
+    # Add the logo with center positioning for the login page
+    add_logo(position="center", width=200)  # Bigger logo for login page
+
+    # Center the form in the middle column
     col1, col2, col3 = st.columns([1, 2, 1])
-    
     with col2:
-        # Animated Logo
-        logo_html = """
-        <div style="text-align: center; margin-bottom: 2rem;">
-            <div style="
-                width: 120px;
-                height: 120px;
-                margin: 0 auto;
-                background: linear-gradient(135deg, #805AF9 0%, #6B46E5 100%);
-                border-radius: 30px;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                box-shadow: 0 10px 30px rgba(128, 90, 249, 0.3);
-                animation: float 3s ease-in-out infinite;
-            ">
-                <span style="color: white; font-size: 3rem; font-weight: 700;">P</span>
-            </div>
-        </div>
-        """
-        st.markdown(logo_html, unsafe_allow_html=True)
-        
-        # Welcome Text
-        create_animated_header("Welcome to PrezLab", "Task Management System")
-        
-        # Login Form with Glass Effect
-        login_container = """
-        <div class="glass-card" style="margin-top: 2rem;">
-            <h3 style="text-align: center; color: #2B1B4C; margin-bottom: 2rem;">
-                Sign in to your account
-            </h3>
-        </div>
-        """
-        st.markdown(login_container, unsafe_allow_html=True)
-        style_form_container()
-        
-        with st.form("enhanced_login_form", clear_on_submit=False):
-            # Email Input with Icon
-            email_container = f"""
-            <div style="position: relative; margin-bottom: 1.5rem;">
-                <div style="position: absolute; left: 1rem; top: 50%; transform: translateY(-50%); color: {COLORS['primary_purple']};">
-                    📧
-                </div>
-            </div>
-            """
-            st.markdown(email_container, unsafe_allow_html=True)
-            
-            email = st.text_input(
-                "Email Address",
-                key="email_input",
-                placeholder="your.email@company.com",
-                label_visibility="collapsed"
-            )
-            
-            # Password Input with Icon
-            password_container = f"""
-            <div style="position: relative; margin-bottom: 1.5rem;">
-                <div style="position: absolute; left: 1rem; top: 50%; transform: translateY(-50%); color: {COLORS['primary_purple']};">
-                    🔒
-                </div>
-            </div>
-            """
-            st.markdown(password_container, unsafe_allow_html=True)
-            
-            password = st.text_input(
-                "Password",
-                type="password",
-                key="password_input",
-                placeholder="Enter your password",
-                label_visibility="collapsed"
-            )
-            default_url = "https://prezlab-staging-19128678.dev.odoo.com"
+        st.title("Welcome")
+        st.subheader("Login with your Odoo credentials")
 
-            # allow user to override
-            with st.expander("Advanced Settings", expanded=False):
-                entered = st.text_input(
-                    "Odoo URL",
-                    key="odoo_url_input",
-                    value=default_url,
-                    help="Enter your Odoo instance URL",
+        with st.form("login_form"):
+            email = st.text_input("Email", key="email_input", placeholder="your.email@company.com")
+            password = st.text_input("Password", type="password", key="password_input")
+            odoo_url = st.text_input("Odoo URL", key="odoo_url_input", 
+                                    value="https://prezlab-staging-19128678.dev.odoo.com",
+                                    help="Enter your Odoo instance URL")
+            submit = st.form_submit_button("Login")
+
+            if not submit:
+                return
+
+            # 1) Require all fields
+            if not email or not password or not odoo_url:
+                st.warning("Please enter all fields.")
+                return
+
+            # 2) Try to authenticate with Odoo
+            try:
+                import xmlrpc.client
+                
+                # Extract database name from URL if it's a standard Odoo URL
+                import re
+                db_match = re.search(r'https://([^.]+)(?:-\d+)?\.', odoo_url)
+                if db_match:
+                    odoo_db = db_match.group(1)
+                    # Handle staging/production URLs
+                    if '-staging-' in odoo_url:
+                        db_parts = odoo_url.split('.')[0].split('//')[-1]
+                        odoo_db = db_parts
+                else:
+                    # Fallback - ask user to provide DB name
+                    st.error("Could not extract database name from URL. Please contact support.")
+                    return
+                
+                # Test connection
+                common = xmlrpc.client.ServerProxy(f"{odoo_url}/xmlrpc/2/common", allow_none=True)
+                uid = common.authenticate(odoo_db, email, password, {})
+                
+                if not uid:
+                    st.error("Invalid credentials. Please check your email and password.")
+                    return
+                
+                # Get user's name from Odoo
+                models = xmlrpc.client.ServerProxy(f"{odoo_url}/xmlrpc/2/object", allow_none=True)
+                user_info = models.execute_kw(
+                    odoo_db, uid, password,
+                    'res.users', 'read',
+                    [[uid]],
+                    {'fields': ['name', 'email']}
                 )
+                
+                user_name = user_info[0]['name'] if user_info else email
+                
+                # Store Odoo credentials in session state
+                st.session_state.odoo_credentials = {
+                    'url': odoo_url,
+                    'db': odoo_db,
+                    'email': email,
+                    'password': password,
+                    'uid': uid,
+                    'name': user_name
+                }
+                
+                # Log into Streamlit session using email as username
+                SessionManager.login(email, expiry_hours=8)
+                
+                st.success(f"Welcome, {user_name}!")
+                st.rerun()
+                
+            except Exception as e:
+                st.error(f"Connection failed: {str(e)}")
+                logger.exception("Odoo login error")
+                return
 
-            # if they cleared it out or never opened the expander, keep default
-            odoo_url = entered.strip() or default_url
-
-            # Remember Me Checkbox
-            col1, col2 = st.columns([1, 1])
-            with col1:
-                remember_me = st.checkbox("Remember me", key="remember_me")
-            with col2:
-                st.markdown(
-                    '<p style="text-align: right; margin-top: 0.5rem;"><a href="#" style="color: #805AF9;">Forgot password?</a></p>',
-                    unsafe_allow_html=True
-                )
-            
-            # Animated Submit Button
-            submit = st.form_submit_button("Sign In", use_container_width=True)
-            
-            if submit:
-                # Show loading animation
-                with st.spinner("Authenticating..."):
-                    # Validation
-                    if not email or not password:
-                        create_notification("Please enter both email and password", "warning")
-                        return
-                    
-                    # Try to authenticate
-                    try:
-                        import xmlrpc.client
-                        import re
-                        
-                        # Extract database name
-                        db_match = re.search(r'https://([^.]+)(?:-\d+)?\.', odoo_url)
-                        if db_match:
-                            odoo_db = db_match.group(1)
-                            if '-staging-' in odoo_url:
-                                db_parts = odoo_url.split('.')[0].split('//')[-1]
-                                odoo_db = db_parts
-                        else:
-                            create_notification("Could not extract database name from URL", "error")
-                            return
-                        
-                        # Test connection
-                        common = xmlrpc.client.ServerProxy(f"{odoo_url}/xmlrpc/2/common", allow_none=True)
-                        uid = common.authenticate(odoo_db, email, password, {})
-                        
-                        if not uid:
-                            create_notification("Invalid credentials. Please check your email and password.", "error")
-                            return
-                        
-                        # Get user info
-                        models = xmlrpc.client.ServerProxy(f"{odoo_url}/xmlrpc/2/object", allow_none=True)
-                        user_info = models.execute_kw(
-                            odoo_db, uid, password,
-                            'res.users', 'read',
-                            [[uid]],
-                            {'fields': ['name', 'email']}
-                        )
-                        
-                        user_name = user_info[0]['name'] if user_info else email
-                        
-                        # Store credentials
-                        st.session_state.odoo_credentials = {
-                            'url': odoo_url,
-                            'db': odoo_db,
-                            'email': email,
-                            'password': password,
-                            'uid': uid,
-                            'name': user_name
-                        }
-                        
-                        # Log in
-                        SessionManager.login(email, expiry_hours=8)
-                        
-                        # Success animation
-                        success_html = f"""
-                        <div style="text-align: center; margin: 2rem 0;">
-                            <div style="
-                                width: 80px;
-                                height: 80px;
-                                margin: 0 auto;
-                                background: linear-gradient(135deg, {COLORS['success']} 0%, {COLORS['green']} 100%);
-                                border-radius: 50%;
-                                display: flex;
-                                align-items: center;
-                                justify-content: center;
-                                animation: fadeIn 0.5s ease;
-                            ">
-                                <span style="color: white; font-size: 2.5rem;">✓</span>
-                            </div>
-                            <h3 style="color: {COLORS['navy']}; margin-top: 1rem;">Welcome back, {user_name}!</h3>
-                            <p style="color: {COLORS['dark_gray']};">Redirecting to dashboard...</p>
-                        </div>
-                        """
-                        st.markdown(success_html, unsafe_allow_html=True)
-                        time.sleep(1)
-                        st.rerun()
-                        
-                    except Exception as e:
-                        create_notification(f"Connection failed: {str(e)}", "error")
-                        logger.exception("Odoo login error")
-        
-        # Sign up link
-        signup_html = f"""
-        <div style="text-align: center; margin-top: 2rem;">
-            <p style="color: {COLORS['dark_gray']};">
-                Don't have an account? 
-                <a href="#" style="color: {COLORS['primary_purple']}; font-weight: 600;">
-                    Sign up
-                </a>
-            </p>
-        </div>
-        """
-        st.markdown(signup_html, unsafe_allow_html=True)
 
 # -------------------------------
 # 2) REQUEST TYPE SELECTION PAGE
 # -------------------------------
 def type_selection_page():
-    """Enhanced task type selection page with modern UI"""
-    from enhanced_prezlab_ui import (
-        inject_enhanced_css, create_animated_header, create_glass_card,
-        create_metric_card, create_task_card, create_notification,
-        animate_number, create_floating_action_button
-    )
+    st.title("Task Management Dashboard")
     
-    # Inject enhanced CSS
-    inject_enhanced_css()
+    # User greeting
+    st.markdown(f"### Welcome, {st.session_state.user['username']}!")
+    st.markdown("Select the type of request you want to create.")
     
-    # Animated Header
-    user_name = st.session_state.get('odoo_credentials', {}).get('name', st.session_state.user['username'])
-    create_animated_header(
-        f"Welcome back, {user_name}!",
-        "What would you like to create today?"
-    )
-    
-    # Quick Stats Row
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        create_metric_card("Tasks Today", "8", delta=2, icon="📅")
-    
-    with col2:
-        create_metric_card("In Progress", "15", icon="🔄")
-    
-    with col3:
-        create_metric_card("Completed", "45", delta=10, icon="✅")
-    
-    with col4:
-        create_metric_card("Team Members", "12", icon="👥")
-    
-    # Spacing
-    st.markdown("<br><br>", unsafe_allow_html=True)
-    
-    # Task Type Selection Cards
     col1, col2 = st.columns(2)
     
     with col1:
-        # Ad-hoc Card
-        adhoc_card_html = f"""
-        <div class="glass-card" style="
-            cursor: pointer;
-            min-height: 250px;
-            display: flex;
-            flex-direction: column;
-            justify-content: space-between;
-            background: linear-gradient(135deg, rgba(255, 255, 255, 0.9), rgba(255, 255, 255, 0.7));
-        " onmouseover="this.style.transform='translateY(-10px)'" onmouseout="this.style.transform='translateY(0)'">
-            <div>
-                <div style="
-                    font-size: 3rem;
-                    margin-bottom: 1rem;
-                    background: linear-gradient(135deg, {COLORS['primary_purple']}, {COLORS['coral']});
-                    -webkit-background-clip: text;
-                    -webkit-text-fill-color: transparent;
-                ">📋</div>
-                <h3 style="color: {COLORS['navy']}; margin-bottom: 0.5rem;">Via Sales Order</h3>
-                <p style="color: {COLORS['dark_gray']}; font-size: 0.9rem;">
-                    Perfect for one-time projects or framework tasks with multiple subtasks
-                </p>
-            </div>
-            <div style="margin-top: 1rem;">
-                <div class="status-pill status-active">Most Popular</div>
-            </div>
-        </div>
-        """
-        st.markdown(adhoc_card_html, unsafe_allow_html=True)
-        
-        if st.button("Create Ad-hoc Request", key="adhoc_btn", use_container_width=True):
-            st.session_state.form_type = "Via Sales Order"
-            st.rerun()
+        with st.container(border=True):
+            st.subheader("Via Sales Order")
+            st.markdown("For one-time projects or framework tasks with subtasks.")
+            if st.button("Create Ad-hoc Request", use_container_width=True):
+                st.session_state.form_type = "Via Sales Order"
+                st.rerun()
     
     with col2:
-        # Retainer Card
-        retainer_card_html = f"""
-        <div class="glass-card" style="
-            cursor: pointer;
-            min-height: 250px;
-            display: flex;
-            flex-direction: column;
-            justify-content: space-between;
-            background: linear-gradient(135deg, rgba(255, 255, 255, 0.9), rgba(255, 255, 255, 0.7));
-        " onmouseover="this.style.transform='translateY(-10px)'" onmouseout="this.style.transform='translateY(0)'">
-            <div>
-                <div style="
-                    font-size: 3rem;
-                    margin-bottom: 1rem;
-                    background: linear-gradient(135deg, {COLORS['blue']}, {COLORS['primary_purple']});
-                    -webkit-background-clip: text;
-                    -webkit-text-fill-color: transparent;
-                ">🔄</div>
-                <h3 style="color: {COLORS['navy']}; margin-bottom: 0.5rem;">Via Project</h3>
-                <p style="color: {COLORS['dark_gray']}; font-size: 0.9rem;">
-                    Ideal for ongoing projects with recurring tasks and long-term clients
-                </p>
-            </div>
-            <div style="margin-top: 1rem;">
-                <div class="status-pill status-pending">Recurring</div>
-            </div>
-        </div>
-        """
-        st.markdown(retainer_card_html, unsafe_allow_html=True)
-        
-        if st.button("Create Retainer Request", key="retainer_btn", use_container_width=True):
-            st.session_state.form_type = "Via Project"
-            st.rerun()
-    
-    # Recent Activities Section
-    st.markdown("<br><br>", unsafe_allow_html=True)
-    
-    recent_activities_html = f"""
-    <div class="glass-card">
-        <h3 style="color: {COLORS['navy']}; margin-bottom: 1.5rem; display: flex; align-items: center;">
-            <span style="margin-right: 0.5rem;">🕐</span>Recent Activities
-        </h3>
-    </div>
-    """
-    st.markdown(recent_activities_html, unsafe_allow_html=True)
-    
-    # Sample Recent Tasks
-    create_task_card(
-        "PowerPoint Presentation - Q4 Results",
-        "Created 2 hours ago • Due: Tomorrow • Client: ABC Corp",
-        status="active",
-        assignee="John Designer"
-    )
-    
-    create_task_card(
-        "Brand Guidelines Document",
-        "Created yesterday • Due: Next Week • Client: XYZ Ltd",
-        status="pending",
-        assignee="Sarah Creative"
-    )
-    
-    create_task_card(
-        "Social Media Templates",
-        "Completed 3 days ago • Client: StartupCo",
-        status="completed",
-        assignee="Mike Artist"
-    )
-    
-    # Quick Actions FAB
-    create_floating_action_button("➕")
-    
-    # Help Section
-    help_html = f"""
-    <div style="
-        position: fixed;
-        bottom: 2rem;
-        left: 2rem;
-        background: {COLORS['navy']};
-        color: white;
-        padding: 0.5rem 1rem;
-        border-radius: 50px;
-        cursor: pointer;
-        transition: all 0.3s ease;
-        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
-    " onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'">
-        <span style="margin-right: 0.5rem;">💬</span>Need help?
-    </div>
-    """
-    st.markdown(help_html, unsafe_allow_html=True)
+        with st.container(border=True):
+            st.subheader("Via Project")
+            st.markdown("For ongoing projects with recurring tasks.")
+            if st.button("Create Retainer Request", use_container_width=True):
+                st.session_state.form_type = "Via Project"
+                st.rerun()
+                
+    # Recent activities section
+    with st.expander("Recent Activities", expanded=False):
+        st.markdown("This section will show recent task activities.")
+        # Here you could display recent tasks from Odoo
 
 # -------------------------------
 # HELPER: Fetch Sales Order Lines
@@ -1164,7 +858,6 @@ def sales_order_page():
     
     # Progress bar
     st.progress(50, text="Step 2 of 4: Select Sales Order")
-    
     
     # Navigation
     cols = st.columns([1, 5])
@@ -1214,7 +907,6 @@ def sales_order_page():
                 st.session_state.sales_orders = []
 
     # Create form for sales order selection
-    style_form_container()
     with st.form("sales_order_form"):
         st.subheader("Select Sales Order")
         
@@ -1314,8 +1006,6 @@ def adhoc_parent_task_page():
     email_analysis_skipped = st.session_state.get("email_analysis_skipped", True)
 
     # Form for parent task details
-    style_form_container()
-
     with st.form("parent_task_form"):
         st.subheader("Parent Task Details")
         
@@ -1523,8 +1213,6 @@ def adhoc_subtask_page():
         
         # Allow adding a custom subtask if needed
         with st.expander("Add Custom Subtask", expanded=True):
-            style_form_container()
-
             with st.form("custom_subtask_form"):
                 custom_subtask_title = st.text_input("Custom Subtask Title")
                 
@@ -1589,8 +1277,6 @@ def adhoc_subtask_page():
     line_name = current_line.get("name", f"Line #{idx+1}") if current_line else f"Subtask #{idx+1}"
     
     # Subtask form
-    style_form_container()
-
     with st.form(f"subtask_form_{idx}"):
         st.subheader(f"Subtask for Sales Order Line: {line_name}")
         
@@ -1991,8 +1677,6 @@ def retainer_parent_task_page():
         models = st.session_state.odoo_models
 
     # Form for retainer parent task
-    style_form_container()
-
     with st.form("retainer_parent_form"):
         st.subheader("Retainer Project Fields")
         
@@ -2140,8 +1824,6 @@ def retainer_subtask_page():
             st.markdown(f"**Internal Due Date:** {retainer_internal_dt.strftime('%Y-%m-%d %H:%M')}")
 
     # Subtask form
-    style_form_container()
-
     with st.form("retainer_subtask_form"):
         st.subheader("Subtask Details")
         
@@ -2728,8 +2410,6 @@ def company_selection_page():
                 st.session_state.companies = []
 
     # Create form for company selection
-    style_form_container()
-
     with st.form("company_selection_form"):
         st.subheader("Select Company")
         
@@ -2821,8 +2501,6 @@ def email_analysis_page():
     
     # Only proceed with email fetching if already authenticated
     # Email Analysis Options Form
-    style_form_container()
-
     with st.form("email_analysis_options"):
         st.subheader("Email Analysis Options")
         
@@ -2938,8 +2616,6 @@ def email_analysis_page():
                             st.markdown("---")
                     
                     # Now create a form for analyzing - separate from thread selection
-                    style_form_container()
-
                     with st.form("analyze_thread_form"):
                         st.subheader("Analyze Selected Thread")
                         
@@ -3595,6 +3271,7 @@ def main():
 
     import streamlit as st
 
+    inject_custom_css()
 
 
     # Set logo position based on login status
