@@ -3595,7 +3595,6 @@ def main():
 
     import streamlit as st
 
-    inject_custom_css()
 
 
     # Set logo position based on login status
