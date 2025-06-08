@@ -6,9 +6,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Tuple, Optional, Any, Union
 from dotenv import load_dotenv
-from openai import OpenAI  # Import the OpenAI class for v1.0+from config import get_secret
-import inspect
 import streamlit as st
+from openai import OpenAI  # Import the OpenAI class for v1.0+
+from config import get_secret  # Move this AFTER streamlit import
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
