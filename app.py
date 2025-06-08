@@ -236,16 +236,16 @@ def add_openai_debug_section():
             test_model(model_test)
 
 def test_openai_simple():
-    """Simple OpenAI API test"""
+    """Simple OpenAI API test - Updated for v1.0+"""
     try:
-        import openai
+        from openai import OpenAI
         from config import get_secret
         
         api_key = get_secret("OPENAI_API_KEY")
-        openai.api_key = api_key
+        client = OpenAI(api_key=api_key)
         
         with st.spinner("Testing API..."):
-            response = openai.ChatCompletion.create(
+            response = client.chat.completions.create(
                 model="gpt-3.5-turbo",
                 messages=[{"role": "user", "content": "Say 'Hello from OpenAI!'"}],
                 max_tokens=20
@@ -254,7 +254,11 @@ def test_openai_simple():
             st.success(f"Response: {response.choices[0].message.content}")
             st.json({
                 "model": response.model,
-                "usage": response.usage.to_dict() if hasattr(response.usage, 'to_dict') else dict(response.usage)
+                "usage": {
+                    "prompt_tokens": response.usage.prompt_tokens,
+                    "completion_tokens": response.usage.completion_tokens,
+                    "total_tokens": response.usage.total_tokens
+                } if response.usage else {}
             })
     except Exception as e:
         st.error(f"Error: {str(e)}")
@@ -289,16 +293,16 @@ def test_designer_matching():
         st.error(f"Error in designer matching: {str(e)}")
 
 def test_model(model_name):
-    """Test a specific model"""
+    """Test a specific model - Updated for v1.0+"""
     try:
-        import openai
+        from openai import OpenAI
         from config import get_secret
         
         api_key = get_secret("OPENAI_API_KEY")
-        openai.api_key = api_key
+        client = OpenAI(api_key=api_key)
         
         with st.spinner(f"Testing {model_name}..."):
-            response = openai.ChatCompletion.create(
+            response = client.chat.completions.create(
                 model=model_name,
                 messages=[{"role": "user", "content": "What model are you?"}],
                 max_tokens=50
@@ -308,7 +312,7 @@ def test_model(model_name):
             
     except Exception as e:
         st.error(f"Error testing {model_name}: {str(e)}")
-        if "model_not_found" in str(e):
+        if "model_not_found" in str(e) or "invalid_request_error" in str(e):
             st.warning(f"Your API key doesn't have access to {model_name}")
 # -------------------------------
 # SIDEBAR
@@ -413,11 +417,12 @@ def render_sidebar():
             st.sidebar.error(f"RPC error: {type(e).__name__}: {e}")
 
     # After the existing test buttons, add:
+    # Replace the OpenAI test button code in render_sidebar() with:
+
     if st.sidebar.button("Test OpenAI API"):
         with st.spinner("Testing OpenAI connection..."):
-            # Import what we need
             try:
-                import openai
+                from openai import OpenAI
                 from config import get_secret
                 
                 api_key = get_secret("OPENAI_API_KEY")
@@ -426,43 +431,22 @@ def render_sidebar():
                 else:
                     st.sidebar.success(f"✅ API key found: {api_key[:8]}...{api_key[-4:]}")
                     
-                    # Test the actual API call
+                    # Test the actual API call with NEW syntax
                     try:
-                        # Check which version of OpenAI we're using
-                        import openai
-                        if hasattr(openai, '__version__'):
-                            st.sidebar.info(f"OpenAI version: {openai.__version__}")
+                        # For OpenAI v1.0+
+                        client = OpenAI(api_key=api_key)
+                        response = client.chat.completions.create(
+                            model="gpt-3.5-turbo",
+                            messages=[
+                                {"role": "system", "content": "You are a test bot."},
+                                {"role": "user", "content": "Respond with 'API working!' and nothing else."}
+                            ],
+                            max_tokens=10,
+                            temperature=0
+                        )
+                        result = response.choices[0].message.content
+                        st.sidebar.success(f"✅ API Response: {result}")
                         
-                        # For openai 0.28.0 (your current version)
-                        if hasattr(openai, 'ChatCompletion'):
-                            openai.api_key = api_key
-                            response = openai.ChatCompletion.create(
-                                model="gpt-3.5-turbo",  # Use gpt-3.5-turbo for testing (cheaper)
-                                messages=[
-                                    {"role": "system", "content": "You are a test bot."},
-                                    {"role": "user", "content": "Respond with 'API working!' and nothing else."}
-                                ],
-                                max_tokens=10,
-                                temperature=0
-                            )
-                            result = response.choices[0].message.content
-                            st.sidebar.success(f"✅ API Response: {result}")
-                        else:
-                            # For newer versions
-                            from openai import OpenAI
-                            client = OpenAI(api_key=api_key)
-                            response = client.chat.completions.create(
-                                model="gpt-3.5-turbo",
-                                messages=[
-                                    {"role": "system", "content": "You are a test bot."},
-                                    {"role": "user", "content": "Respond with 'API working!' and nothing else."}
-                                ],
-                                max_tokens=10,
-                                temperature=0
-                            )
-                            result = response.choices[0].message.content
-                            st.sidebar.success(f"✅ API Response: {result}")
-                            
                     except Exception as api_error:
                         st.sidebar.error(f"❌ API Error: {str(api_error)}")
                         if "insufficient_quota" in str(api_error):
@@ -474,7 +458,7 @@ def render_sidebar():
                             
             except ImportError as e:
                 st.sidebar.error(f"❌ Import Error: {e}")
-                st.sidebar.info("Make sure 'openai' is installed: pip install openai==0.28.0")
+                st.sidebar.info("Make sure 'openai' is installed: pip install openai>=1.0.0")
 
     st.sidebar.markdown("---")
     st.sidebar.caption("© 2025 Task Management System")

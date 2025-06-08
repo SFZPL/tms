@@ -2,7 +2,7 @@ import os
 import logging
 from typing import Dict, Any, Optional
 from dotenv import load_dotenv
-import openai  # Import the entire openai module instead of OpenAI class
+from openai import OpenAI
 from config import get_secret
 
 # Configure logging
@@ -25,6 +25,7 @@ try:
 except Exception as e:
     logger.error(f"Error initializing OpenAI: {e}", exc_info=True)
     client = None
+
 def analyze_email(email_text: str, model: str = None) -> dict:
     """
     Extracts relevant service request details from an email using OpenAI.
@@ -36,9 +37,9 @@ def analyze_email(email_text: str, model: str = None) -> dict:
     Returns:
         Dictionary with extracted information
     """
-    if not openai.api_key:
-        logger.error("OpenAI API key not set")
-        return {"error": "OpenAI API key not set. Check API key and configuration."}
+    if not client:
+        logger.error("OpenAI client not initialized")
+        return {"error": "OpenAI client not initialized. Check API key and configuration."}
     
     if not email_text:
         logger.warning("Empty email text provided")

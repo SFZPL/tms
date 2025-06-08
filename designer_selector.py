@@ -6,8 +6,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Tuple, Optional, Any, Union
 from dotenv import load_dotenv
-import openai  # Import the entire openai module instead of OpenAI class
-from config import get_secret
+from openai import OpenAI  # Import the OpenAI class for v1.0+from config import get_secret
 import inspect
 import streamlit as st
 # Configure logging
@@ -68,39 +67,26 @@ debug_openai_setup()
 # Then update the client initialization try/except with more debugging:
 try:
     api_key = get_secret("OPENAI_API_KEY")
-    logger.info(f"Initializing OpenAI with key (first 8 chars): {api_key[:8]}...")
+    logger.info(f"Initializing OpenAI with key (first 8 chars): {api_key[:8] if api_key else 'None'}...")
     
-    # For OpenAI SDK v1.0+
-    try:
-        from openai import OpenAI
+    if api_key:
         client = OpenAI(api_key=api_key)
-        logger.info("Successfully created OpenAI client with new SDK")
+        logger.info("Successfully created OpenAI client with v1.35.3")
         
         # Test the client with a simple API call
         try:
             models = client.models.list()
-            logger.info(f"API test successful! Available models: {len(models.data)}")
-            
-            # Show success in UI
-            if 'openai_debug_shown' in st.session_state:
-                st.success(f"✅ API test successful! Available models: {len(list(models.data))}")
+            logger.info(f"API test successful! Available models: {len(list(models.data))}")
         except Exception as test_err:
             logger.error(f"API test failed: {test_err}")
-            if 'openai_debug_shown' in st.session_state:
-                st.error(f"❌ API test failed: {test_err}")
-    except ImportError:
-        # Fallback to older SDK
-        logger.info("New SDK import failed, trying older OpenAI SDK pattern")
-        st.warning("New SDK import failed, trying older OpenAI SDK pattern")
-        openai.api_key = api_key
-        client = openai  # Use openai module directly as client
-        logger.info("Using older OpenAI SDK pattern")
+    else:
+        logger.error("No OpenAI API key found")
+        client = None
         
     DEFAULT_MODEL = get_secret("OPENAI_MODEL", "gpt-4")
     logger.info(f"Default model set to: {DEFAULT_MODEL}")
 except Exception as e:
     logger.error(f"OpenAI initialization failed: {e}", exc_info=True)
-    st.error(f"❌ OpenAI initialization failed: {e}")
     client = None
 
 def safe_api_call(func, *args, retries=3, delay=7, **kwargs):
