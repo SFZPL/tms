@@ -8,6 +8,21 @@ if current_dir not in sys.path:
 
 # Now try to import
 import streamlit as st
+from enhanced_prezlab_ui import (
+  inject_enhanced_css,
+  create_animated_header,
+  create_glass_card,
+  create_metric_card,
+  create_task_card,
+  create_notification,
+  create_progress_steps,
+  animate_number,
+  style_form_container,
+  show_loading_animation,
+  create_floating_action_button,
+  COLORS
+)
+from prezlab_logo_enhancement import add_enhanced_logo, create_text_logo
 # Set page config
 st.set_page_config(
     page_title="Task Management System",
@@ -88,21 +103,6 @@ from designer_selector import (
     rank_designers_by_skill_match
 )
 
-from enhanced_prezlab_ui import (
-  inject_enhanced_css,
-  create_animated_header,
-  create_glass_card,
-  create_metric_card,
-  create_task_card,
-  create_notification,
-  create_progress_steps,
-  animate_number,
-  style_form_container,
-  show_loading_animation,
-  create_floating_action_button,
-  COLORS
-)
-from prezlab_logo_enhancement import add_enhanced_logo, create_text_logo
 
 # ─── Logging ─────────────────────────────────────────────────────────────────
 logging.basicConfig(
