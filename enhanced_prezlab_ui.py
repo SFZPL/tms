@@ -515,49 +515,64 @@ def create_task_card(task_title, task_info, status="pending", assignee=None):
     """
     st.markdown(card_html, unsafe_allow_html=True)
 
-def create_metric_card(label, value, delta=None, icon=None):
-    """Create an animated metric card"""
-    delta_html = ""
-    if delta:
-        delta_color = COLORS['success'] if delta > 0 else COLORS['danger']
-        delta_icon = "↑" if delta > 0 else "↓"
-        delta_html = f"""
-        <div style="
-            color: {delta_color};
-            font-size: 0.875rem;
-            margin-top: 0.5rem;
-        ">{delta_icon} {abs(delta)}%</div>
-        """
-    
-    icon_html = ""
+def create_metric_card(label: str, value: str, delta: float = None, icon: str = None):
+    """Create a styled metric card with optional delta and icon."""
+    html_lines = []
+
+    # 1) Card container
+    html_lines.append(
+        '<div class="glass-card" '
+        'style="position: relative; text-align: center; padding: 1rem;">'
+    )
+
+    # 2) Optional icon
     if icon:
-        icon_html = f"""
-        <div style="
-            position: absolute;
-            right: 1rem;
-            top: 1rem;
-            font-size: 2rem;
-            opacity: 0.2;
-        ">{icon}</div>
-        """
-    
-    card_html = f"""
-    <div class="glass-card" style="position: relative; text-align: center;">
-        {icon_html}
-        <div style="
-            font-size: 2.5rem;
-            font-weight: 700;
-            color: {COLORS['primary_purple']};
-            margin: 0.5rem 0;
-        ">{value}</div>
-        <div style="
-            color: {COLORS['dark_gray']};
-            font-size: 1rem;
-        ">{label}</div>
-        {delta_html}
-    </div>
-    """
-    import streamlit as st
+        html_lines.append(
+            '<div style="'
+            'position: absolute; right: 1rem; top: 1rem; '
+            'font-size: 2rem; opacity: 0.2;">'
+            f'{icon}'
+            '</div>'
+        )
+
+    # 3) Value
+    html_lines.append(
+        '<div style="'
+        'font-size: 2.5rem; font-weight: 700; '
+        f"color: {COLORS['primary_purple']}; margin: 0.5rem 0;"
+        '">'
+        f'{value}'
+        '</div>'
+    )
+
+    # 4) Label
+    html_lines.append(
+        '<div style="'
+        f"color: {COLORS['dark_gray']}; font-size: 1rem;"
+        '">'
+        f'{label}'
+        '</div>'
+    )
+
+    # 5) Optional delta
+    if delta is not None:
+        delta_color = COLORS['success'] if delta > 0 else COLORS['danger']
+        delta_icon  = '↑' if delta > 0 else '↓'
+        html_lines.append(
+            '<div style="'
+            f"color: {delta_color}; font-size: 0.875rem; margin-top: 0.5rem;"
+            '">'
+            f'{delta_icon}{abs(delta)}%'
+            '</div>'
+        )
+
+    # 6) Close container
+    html_lines.append('</div>')
+
+    # Join into one string with line-breaks (for readability in the browser)
+    card_html = "\n".join(html_lines)
+
+    # Tell Streamlit to render it as HTML
     st.markdown(card_html, unsafe_allow_html=True)
 
 def create_notification(message, type="info"):
