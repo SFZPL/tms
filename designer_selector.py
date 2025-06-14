@@ -28,43 +28,6 @@ DEFAULT_DESIGNER_FILE = get_secret("DESIGNER_FILE", "Cleaned_Assignment_Guide.xl
 # Add this after imports but before client initialization
 import inspect
 
-# Debug function to track OpenAI setup
-def debug_openai_setup():
-    """Debug function that outputs to both logger and Streamlit UI"""
-    logger.info("=" * 50)
-    logger.info("DEBUGGING OPENAI SETUP")
-    
-    # Also show in Streamlit UI
-    if 'openai_debug_shown' not in st.session_state:
-        st.session_state.openai_debug_shown = True
-        with st.expander("🔍 OpenAI Debug Info", expanded=True):
-            # Check API key
-            api_key = get_secret("OPENAI_API_KEY")
-            if api_key:
-                st.success(f"✅ API key found, starts with: {api_key[:8]}...")
-                st.info(f"API key length: {len(api_key)}")
-                logger.info(f"API key found, starts with: {api_key[:8]}...")
-                logger.info(f"API key length: {len(api_key)}")
-            else:
-                st.error("❌ NO API KEY FOUND!")
-                logger.error("NO API KEY FOUND!")
-            
-            # Check if OpenAI is installed
-            try:
-                st.write(f"OpenAI module path: {inspect.getfile(openai)}")
-                logger.info(f"OpenAI module path: {inspect.getfile(openai)}")
-                if hasattr(openai, '__version__'):
-                    st.write(f"OpenAI version: {openai.__version__}")
-                    logger.info(f"OpenAI version: {openai.__version__}")
-            except Exception as e:
-                st.error(f"Error checking OpenAI module: {e}")
-                logger.error(f"Error checking OpenAI module: {e}")
-    
-    logger.info("=" * 50)
-
-# Call this debug function
-debug_openai_setup()
-
 # Then update the client initialization try/except with more debugging:
 try:
     api_key = get_secret("OPENAI_API_KEY")

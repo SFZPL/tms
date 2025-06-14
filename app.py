@@ -88,6 +88,20 @@ from designer_selector import (
 
 from prezlab_ui import inject_custom_css, header, container, message, progress_steps, scribble, add_logo
 
+# Add this line after your existing imports
+from enhanced_prezlab_ui import (
+    inject_enhanced_css,
+    create_animated_header,
+    create_notification,
+    create_progress_steps,
+    create_glass_card,
+    create_task_card,
+    style_form_container,
+    create_metric_card,
+    show_loading_animation,
+    COLORS
+)
+
 # ─── Logging ─────────────────────────────────────────────────────────────────
 logging.basicConfig(
     level=logging.INFO,
@@ -97,11 +111,16 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-# Replace environment variables with secrets
-ODOO_URL = get_secret("ODOO_URL")
-ODOO_DB = get_secret("ODOO_DB")
-ODOO_USERNAME = get_secret("ODOO_USERNAME") 
-ODOO_PASSWORD = get_secret("ODOO_PASSWORD")
+# At the top of app.py, after imports
+def get_odoo_credentials():
+    """Get Odoo credentials from session state"""
+    if 'odoo_credentials' in st.session_state:
+        creds = st.session_state.odoo_credentials
+        return creds.get('url'), creds.get('db'), creds.get('email'), creds.get('password')
+    return None, None, None, None
+
+# Update the constants
+ODOO_URL, ODOO_DB, ODOO_USERNAME, ODOO_PASSWORD = get_odoo_credentials()
 
 def add_debug_sidebar(debugger: SystemDebugger):
     """
@@ -175,65 +194,65 @@ def validate_session():
         with st.spinner("Reconnecting to Odoo..."):
             uid, models = get_odoo_connection(force_refresh=True)
             if not uid or not models:
-                st.error("Lost connection to Odoo. Please log in again.")
+                create_notification("Lost connection to Odoo. Please log in again.", "error")
                 SessionManager.logout()
                 return False
     
     return True
-# Add a more comprehensive OpenAI debug in the auth_debug_page function:
-def add_openai_debug_section():
-    """Add this to your auth_debug_page() function"""
+# # Add a more comprehensive OpenAI debug in the auth_debug_page function:
+# def add_openai_debug_section():
+#     """Add this to your auth_debug_page() function"""
     
-    st.subheader("OpenAI API Testing")
+#     st.subheader("OpenAI API Testing")
     
-    col1, col2 = st.columns(2)
+#     col1, col2 = st.columns(2)
     
-    with col1:
-        st.write("**Configuration Status:**")
+#     with col1:
+#         st.write("**Configuration Status:**")
         
-        # Check API key
-        from config import get_secret
-        api_key = get_secret("OPENAI_API_KEY")
-        if api_key:
-            st.success(f"✅ API Key configured ({len(api_key)} chars)")
-            st.text(f"Key preview: {api_key[:15]}...{api_key[-4:]}")
-        else:
-            st.error("❌ No API key found")
+#         # Check API key
+#         from config import get_secret
+#         api_key = get_secret("OPENAI_API_KEY")
+#         if api_key:
+#             create_notification(f"✅ API Key configured ({len(api_key)} chars)", "success")
+#             st.text(f"Key preview: {api_key[:15]}...{api_key[-4:]}")
+#         else:
+#             create_notification("❌ No API key found", "error")
             
-        # Check model setting
-        model = get_secret("OPENAI_MODEL", "gpt-4")
-        st.info(f"Default model: {model}")
+#         # Check model setting
+#         model = get_secret("OPENAI_MODEL", "gpt-4")
+#         create_notification(f"Default model: {model}", "info")
         
-        # Check OpenAI version
-        try:
-            import openai
-            if hasattr(openai, '__version__'):
-                st.info(f"OpenAI library version: {openai.__version__}")
-            else:
-                st.warning("Cannot determine OpenAI version")
-        except ImportError:
-            st.error("OpenAI library not installed")
+#         # Check OpenAI version
+#         try:
+#             import openai
+#             if hasattr(openai, '__version__'):
+#                 create_notification(f"OpenAI library version: {openai.__version__}", "info")
+#             else:
+#                 create_notification("Cannot determine OpenAI version", "warning")
+#         except ImportError:
+#             create_notification("OpenAI library not installed", "error")
     
-    with col2:
-        st.write("**API Tests:**")
+#     with col2:
+#         st.write("**API Tests:**")
         
-        # Simple API test
-        if st.button("Test Simple API Call", key="test_openai_simple"):
-            test_openai_simple()
+#         # Simple API test
+#         if st.button("Test Simple API Call", key="test_openai_simple"):
+#             test_openai_simple()
             
-        # Test designer matching
-        if st.button("Test Designer Matching", key="test_designer_ai"):
-            test_designer_matching()
+#         # Test designer matching
+#         if st.button("Test Designer Matching", key="test_designer_ai"):
+#             test_designer_matching()
             
-        # Test with different models
-        model_test = st.selectbox(
-            "Test with model:",
-            ["gpt-3.5-turbo", "gpt-4", "gpt-4-turbo-preview"],
-            key="model_test_select"
-        )
+#         # Test with different models
+#         model_test = st.selectbox(
+#             "Test with model:",
+#             ["gpt-3.5-turbo", "gpt-4", "gpt-4-turbo-preview"],
+#             key="model_test_select"
+#         )
         
-        if st.button("Test Selected Model", key="test_selected_model"):
-            test_model(model_test)
+#         if st.button("Test Selected Model", key="test_selected_model"):
+#             test_model(model_test)
 
 def test_openai_simple():
     """Simple OpenAI API test - Updated for v1.0+"""
@@ -251,7 +270,7 @@ def test_openai_simple():
                 max_tokens=20
             )
             
-            st.success(f"Response: {response.choices[0].message.content}")
+            create_notification(f"Response: {response.choices[0].message.content}", "success")
             st.json({
                 "model": response.model,
                 "usage": {
@@ -261,11 +280,11 @@ def test_openai_simple():
                 } if response.usage else {}
             })
     except Exception as e:
-        st.error(f"Error: {str(e)}")
+        create_notification(f"Error: {str(e)}", "error")
         if "insufficient_quota" in str(e):
-            st.warning("You need to add credits to your OpenAI account")
+            create_notification("You need to add credits to your OpenAI account", "warning")
         elif "invalid_api_key" in str(e):
-            st.warning("Your API key is invalid")
+            create_notification("Your API key is invalid", "warning")
 
 def test_designer_matching():
     """Test the designer matching functionality"""
@@ -275,10 +294,10 @@ def test_designer_matching():
         # Load designers
         designers_df = load_designers()
         if designers_df.empty:
-            st.error("No designers loaded!")
+            create_notification("No designers loaded!", "error")
             return
             
-        st.info(f"Loaded {len(designers_df)} designers")
+        create_notification(f"Loaded {len(designers_df)} designers", "info")
         
         # Test request
         test_request = "Need a PowerPoint presentation in Arabic for a corporate client"
@@ -286,11 +305,11 @@ def test_designer_matching():
         with st.spinner("Testing designer matching..."):
             suggestion = suggest_best_designer(test_request, designers_df, max_designers=3)
             
-        st.success("Designer matching completed!")
+        create_notification("Designer matching completed!", "success")
         st.text_area("Suggestion:", suggestion, height=200)
         
     except Exception as e:
-        st.error(f"Error in designer matching: {str(e)}")
+        create_notification(f"Error in designer matching: {str(e)}", "error")
 
 def test_model(model_name):
     """Test a specific model - Updated for v1.0+"""
@@ -308,12 +327,12 @@ def test_model(model_name):
                 max_tokens=50
             )
             
-            st.success(f"Response: {response.choices[0].message.content}")
+            create_notification(f"Response: {response.choices[0].message.content}", "success")
             
     except Exception as e:
-        st.error(f"Error testing {model_name}: {str(e)}")
+        create_notification(f"Error testing {model_name}: {str(e)}", "error")
         if "model_not_found" in str(e) or "invalid_request_error" in str(e):
-            st.warning(f"Your API key doesn't have access to {model_name}")
+            create_notification(f"Your API key doesn't have access to {model_name}", "warning")
 # -------------------------------
 # SIDEBAR
 # -------------------------------
@@ -321,33 +340,161 @@ def render_sidebar():
     import xmlrpc.client
     from config import get_secret
     from session_manager import SessionManager
-
+    import base64
+    import os
+    
+    # Enhanced sidebar styling
+    sidebar_style = f"""
+    <style>
+    section[data-testid="stSidebar"] {{
+        background: linear-gradient(180deg, #2B1B4C 0%, #6B46E5 100%);
+    }}
+    
+    /* Ensure all text is white */
+    section[data-testid="stSidebar"] * {{
+        color: white !important;
+    }}
+    
+    section[data-testid="stSidebar"] .stMarkdown {{
+        color: white !important;
+    }}
+    
+    section[data-testid="stSidebar"] h1,
+    section[data-testid="stSidebar"] h2,
+    section[data-testid="stSidebar"] h3,
+    section[data-testid="stSidebar"] h4,
+    section[data-testid="stSidebar"] h5,
+    section[data-testid="stSidebar"] h6,
+    section[data-testid="stSidebar"] p,
+    section[data-testid="stSidebar"] label {{
+        color: white !important;
+    }}
+    
+    /* Style buttons */
+    section[data-testid="stSidebar"] .stButton > button {{
+        background: rgba(255, 255, 255, 0.1);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        color: white !important;
+        transition: all 0.3s ease;
+        width: 100%;
+        text-align: left;
+        padding: 0.5rem 1rem;
+    }}
+    
+    section[data-testid="stSidebar"] .stButton > button:hover {{
+        background: rgba(255, 255, 255, 0.2);
+        transform: translateX(5px);
+    }}
+    
+    /* Fix caption text */
+    section[data-testid="stSidebar"] .stCaption {{
+        color: rgba(255, 255, 255, 0.7) !important;
+    }}
+    </style>
+    """
+    st.sidebar.markdown(sidebar_style, unsafe_allow_html=True)
+    
+    # Logo section
+    logo_html = ""
+    logo_path = "PrezLab-Logos-02.png"
+    
+    # Check if logo is already in session state
+    if hasattr(st.session_state, 'logo_base64') and st.session_state.logo_base64:
+        logo_html = f"""
+        <div style="text-align: center; margin-bottom: 2rem;">
+            <img src="data:image/png;base64,{st.session_state.logo_base64}" 
+                 style="width: 40px; height: auto; 
+                        background: white; 
+                        padding: 3px; 
+                        border-radius: 10px;
+                        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);">
+            <h2 style="color: white; margin-top: 1rem; font-weight: 300; font-size: 1.2rem;">PrezLab TMS</h2>
+        </div>
+        """
+    else:
+        # Try to load logo from file
+        possible_paths = [
+            logo_path,
+            os.path.join(".", logo_path),
+            os.path.join(os.path.dirname(__file__), logo_path) if '__file__' in globals() else logo_path
+        ]
+        
+        for path in possible_paths:
+            if os.path.exists(path):
+                try:
+                    with open(path, "rb") as f:
+                        logo_data = base64.b64encode(f.read()).decode()
+                        st.session_state.logo_base64 = logo_data  # Cache for future use
+                        logo_html = f"""
+                        <div style="text-align: center; margin-bottom: 2rem;">
+                            <img src="data:image/png;base64,{logo_data}" 
+                                 style="width: 60px; height: auto; 
+                                        background: white; 
+                                        padding: 6px; 
+                                        border-radius: 15px;
+                                        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);">
+                            <h2 style="color: white; margin-top: 1rem; font-weight: 300; font-size: 1.2rem;">PrezLab TMS</h2>
+                        </div>
+                        """
+                        break
+                except Exception as e:
+                    logger.error(f"Error loading logo: {e}")
+    
+    # Fallback if no logo found
+    if not logo_html:
+        logo_html = """
+        <div style="text-align: center; margin-bottom: 2rem;">
+            <div style="
+                background: white;
+                width: 60px;
+                height: 60px;
+                border-radius: 15px;
+                margin: 0 auto;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 32px;
+                font-weight: 700;
+                color: #805AF9;
+                box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);">
+                P</div>
+            <h2 style="color: white; margin-top: 1rem; font-weight: 300; font-size: 1.2rem;">PrezLab TMS</h2>
+        </div>
+        <style>
+        @keyframes float {
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-10px); }
+        }
+        </style>
+        """
+    
+    st.sidebar.markdown(logo_html, unsafe_allow_html=True)
     st.sidebar.title("Task Management")
 
-    # ─── Always‑visible debug info ──────────────────────────────────────────
-    st.sidebar.markdown("#### Debug Info:")
-    st.sidebar.write("Logged in:", st.session_state.get("logged_in", False))
-    st.sidebar.write("Username:", st.session_state.get("user", {}).get("username", "None"))
-    # Show session expiry if available
-    expiry = st.session_state.get("session_expiry")
-    if expiry:
-        st.sidebar.write("Session expires at:", expiry.strftime("%Y-%m-%d %H:%M:%S"))
-    st.sidebar.markdown("---")
-    # ─── Always‑visible debug info ──────────────────────────────────────
-    st.sidebar.markdown("#### User Info:")
+    # User Info Section
+    st.sidebar.markdown("<h4 style='color: white; margin-bottom: 10px;'>User Info:</h4>", unsafe_allow_html=True)
+    
     if st.session_state.get("logged_in", False):
         user_name = st.session_state.get("odoo_credentials", {}).get("name", "Unknown")
         user_email = st.session_state.get("user", {}).get("username", "None")
-        st.sidebar.write(f"**Name:** {user_name}")
-        st.sidebar.write(f"**Email:** {user_email}")
+        
+        st.sidebar.markdown(f"<p style='color: white; margin: 5px 0;'><b>Name:</b> {user_name}</p>", unsafe_allow_html=True)
+        st.sidebar.markdown(f"<p style='color: white; margin: 5px 0;'><b>Email:</b> {user_email}</p>", unsafe_allow_html=True)
+        
+        # Session expiry
+        expiry = st.session_state.get("session_expiry")
+        if expiry:
+            st.sidebar.markdown(f"<p style='color: white; margin: 5px 0;'><b>Session expires:</b> {expiry.strftime('%Y-%m-%d %H:%M')}</p>", unsafe_allow_html=True)
     else:
-        st.sidebar.write("Not logged in")
+        st.sidebar.markdown("<p style='color: white; font-style: italic;'>Not logged in</p>", unsafe_allow_html=True)
 
-    # ─── Navigation & Auth (only if logged in) ───────────────────────────
+    st.sidebar.markdown("---")
+
+    # Navigation & Auth (only if logged in)
     if st.session_state.get("logged_in", False):
         # Navigation
         st.sidebar.subheader("Navigation")
-        if st.sidebar.button("Home"):
+        if st.sidebar.button("🏠 Home"):
             SessionManager.clear_flow_data()
             st.rerun()
 
@@ -362,14 +509,15 @@ def render_sidebar():
 
         # Odoo Connection
         st.sidebar.subheader("Connection")
-        if st.sidebar.button("Reconnect to Odoo"):
+        if st.sidebar.button("🔄 Reconnect to Odoo"):
             with st.spinner("Reconnecting..."):
                 uid, models = get_odoo_connection(force_refresh=True)
                 if uid:
                     st.sidebar.success("Reconnected successfully!")
                 else:
                     st.sidebar.error("Failed to reconnect. Check logs.")
-        if st.sidebar.button("Logout"):
+                    
+        if st.sidebar.button("🚪 Logout"):
             SessionManager.logout()
             st.rerun()
 
@@ -377,92 +525,92 @@ def render_sidebar():
         if st.session_state.user.get("username") == "admin":
             st.sidebar.markdown("---")
             st.sidebar.subheader("Admin Tools")
-            if st.sidebar.button("System Debug Dashboard"):
+            if st.sidebar.button("🐛 System Debug Dashboard"):
                 st.session_state.debug_mode = "system_debug"
                 st.rerun()
-            if st.sidebar.button("Auth Debug Dashboard"):
+            if st.sidebar.button("🔐 Auth Debug Dashboard"):
                 st.session_state.debug_mode = "auth_debug"
                 st.rerun()
     else:
         st.sidebar.info("Please log in to access navigation.")
 
-    # ─── Quick Debug (always visible) ─────────────────────────────────────
+    # Quick Debug (always visible)
     st.sidebar.markdown("---")
     st.sidebar.subheader("Quick Debug")
     
     if st.sidebar.button("Test Supabase"):
-        # your existing Supabase test code here...
-        pass
+        try:
+            from token_storage import test_supabase_connection
+            result, message = test_supabase_connection()
+            if result:
+                st.sidebar.success(message)
+            else:
+                st.sidebar.error(message)
+        except Exception as e:
+            st.sidebar.error(f"Error: {str(e)}")
 
     if st.sidebar.button("Test Encryption"):
-        # your existing Encryption test code here...
-        pass
+        try:
+            from token_storage import encrypt_token, decrypt_token
+            test_data = {"test": "data"}
+            encrypted = encrypt_token(test_data)
+            if encrypted:
+                decrypted = decrypt_token(encrypted)
+                if decrypted == test_data:
+                    st.sidebar.success("✅ Encryption working!")
+                else:
+                    st.sidebar.error("❌ Decryption mismatch")
+            else:
+                st.sidebar.error("❌ Encryption failed")
+        except Exception as e:
+            st.sidebar.error(f"Error: {str(e)}")
 
     if st.sidebar.button("Test Odoo Secrets"):
         for key in ["ODOO_URL", "ODOO_DB", "ODOO_USERNAME", "ODOO_PASSWORD"]:
             val = get_secret(key)
-            st.sidebar.write(f"**{key}** →", "✅ set" if val else "❌ EMPTY")
+            if val:
+                st.sidebar.markdown(f"<p style='color: white;'>✅ <b>{key}</b> is set</p>", unsafe_allow_html=True)
+            else:
+                st.sidebar.markdown(f"<p style='color: white;'>❌ <b>{key}</b> is EMPTY</p>", unsafe_allow_html=True)
 
     if st.sidebar.button("Test Odoo Connection"):
-        url = get_secret("ODOO_URL") + "/xmlrpc/2/common"
         try:
-            uid = xmlrpc.client.ServerProxy(url).authenticate(
-                get_secret("ODOO_DB"),
-                get_secret("ODOO_USERNAME"),
-                get_secret("ODOO_PASSWORD"),
-                {}
-            )
-            st.sidebar.success(f"authenticate() → {uid!r}")
+            # Try to get credentials from session state first
+            odoo_credentials = st.session_state.get('odoo_credentials', {})
+            if odoo_credentials:
+                url = odoo_credentials['url'] + "/xmlrpc/2/common"
+                uid = xmlrpc.client.ServerProxy(url).authenticate(
+                    odoo_credentials['db'],
+                    odoo_credentials['email'],
+                    odoo_credentials['password'],
+                    {}
+                )
+                st.sidebar.success(f"✅ Connected! UID: {uid}")
+            else:
+                # Fallback to secrets
+                url = get_secret("ODOO_URL") + "/xmlrpc/2/common"
+                uid = xmlrpc.client.ServerProxy(url).authenticate(
+                    get_secret("ODOO_DB"),
+                    get_secret("ODOO_USERNAME"),
+                    get_secret("ODOO_PASSWORD"),
+                    {}
+                )
+                st.sidebar.success(f"✅ authenticate() → {uid!r}")
         except Exception as e:
-            st.sidebar.error(f"RPC error: {type(e).__name__}: {e}")
-
-    # After the existing test buttons, add:
-    # Replace the OpenAI test button code in render_sidebar() with:
-
-    if st.sidebar.button("Test OpenAI API"):
-        with st.spinner("Testing OpenAI connection..."):
-            try:
-                from openai import OpenAI
-                from config import get_secret
-                
-                api_key = get_secret("OPENAI_API_KEY")
-                if not api_key:
-                    st.sidebar.error("❌ No API key found in secrets!")
-                else:
-                    st.sidebar.success(f"✅ API key found: {api_key[:8]}...{api_key[-4:]}")
-                    
-                    # Test the actual API call with NEW syntax
-                    try:
-                        # For OpenAI v1.0+
-                        client = OpenAI(api_key=api_key)
-                        response = client.chat.completions.create(
-                            model="gpt-3.5-turbo",
-                            messages=[
-                                {"role": "system", "content": "You are a test bot."},
-                                {"role": "user", "content": "Respond with 'API working!' and nothing else."}
-                            ],
-                            max_tokens=10,
-                            temperature=0
-                        )
-                        result = response.choices[0].message.content
-                        st.sidebar.success(f"✅ API Response: {result}")
-                        
-                    except Exception as api_error:
-                        st.sidebar.error(f"❌ API Error: {str(api_error)}")
-                        if "insufficient_quota" in str(api_error):
-                            st.sidebar.warning("💳 You've exceeded your API quota. Add credits to your OpenAI account.")
-                        elif "invalid_api_key" in str(api_error):
-                            st.sidebar.warning("🔑 Invalid API key. Check your OpenAI API key.")
-                        else:
-                            st.sidebar.info("Check the error message above for details.")
-                            
-            except ImportError as e:
-                st.sidebar.error(f"❌ Import Error: {e}")
-                st.sidebar.info("Make sure 'openai' is installed: pip install openai>=1.0.0")
+            st.sidebar.error(f"❌ RPC error: {type(e).__name__}: {e}")
 
     st.sidebar.markdown("---")
-    st.sidebar.caption("© 2025 Task Management System")
-
+    st.sidebar.caption("© 2025 PrezLab TMS")
+    
+    # Debug info at bottom
+    st.sidebar.markdown("<h5 style='color: white; margin-top: 20px;'>Debug Info:</h5>", unsafe_allow_html=True)
+    st.sidebar.markdown(f"<p style='color: rgba(255,255,255,0.7); font-size: 12px;'>Logged in: {st.session_state.get('logged_in', False)}</p>", unsafe_allow_html=True)
+    st.sidebar.markdown(f"<p style='color: rgba(255,255,255,0.7); font-size: 12px;'>Username: {st.session_state.get('user', {}).get('username', 'None')}</p>", unsafe_allow_html=True)
+    
+    # Show session expiry if available
+    expiry = st.session_state.get("session_expiry")
+    if expiry:
+        st.sidebar.markdown(f"<p style='color: rgba(255,255,255,0.7); font-size: 12px;'>Session expires at: {expiry.strftime('%Y-%m-%d %H:%M:%S')}</p>", unsafe_allow_html=True)
 
 def auth_debug_page():
     """Dashboard for authentication debugging"""
@@ -497,9 +645,9 @@ def auth_debug_page():
                         "google_auth_complete"]:
                 if key in st.session_state:
                     del st.session_state[key]
-            st.success("All tokens reset successfully. Please re-authenticate.")
+            create_notification("All tokens reset successfully. Please re-authenticate.", "success")
         else:
-            st.error("Failed to reset tokens. Check logs for details.")
+            create_notification("Failed to reset tokens. Check logs for details.", "error")
     
     # Supabase Testing
     st.subheader("Supabase Connection Test")
@@ -511,14 +659,14 @@ def auth_debug_page():
             if client:
                 try:
                     response = client.table("oauth_tokens").select("count").limit(1).execute()
-                    st.success("✅ Supabase connection successful")
+                    create_notification("✅ Supabase connection successful", "success")
                     st.json(response.data)
                 except Exception as e:
-                    st.error(f"❌ Table error: {str(e)}")
+                    create_notification(f"❌ Table error: {str(e)}", "error")
             else:
-                st.error("❌ Supabase client creation failed")
+                create_notification("❌ Supabase client creation failed", "error")
         except Exception as e:
-            st.error(f"❌ Error: {str(e)}")
+            create_notification(f"❌ Error: {str(e)}", "error")
     
     # Test encryption
     st.subheader("Encryption Test")
@@ -530,7 +678,7 @@ def auth_debug_page():
             # Get encryption key
             key = get_encryption_key()
             if key:
-                st.success(f"✅ Encryption key found (length: {len(key)})")
+                create_notification(f"✅ Encryption key found (length: {len(key)})", "success")
                 
                 # Test encryption/decryption
                 import time as time_module  # Add this near your other imports
@@ -540,24 +688,24 @@ def auth_debug_page():
                 
                 encrypted = encrypt_token(test_data)
                 if encrypted:
-                    st.success(f"✅ Encryption successful")
+                    create_notification(f"✅ Encryption successful", "success")
                     st.text(f"Encrypted data preview: {encrypted[:50]}...")
                     
                     decrypted = decrypt_token(encrypted)
                     if decrypted == test_data:
-                        st.success("✅ Decryption successful")
+                        create_notification("✅ Decryption successful", "success")
                         st.write("Decrypted data:", decrypted)
                     else:
-                        st.error("❌ Decryption failed or mismatched")
+                        create_notification("❌ Decryption failed or mismatched", "error")
                         st.write("Decrypted data:", decrypted)
                 else:
-                    st.error("❌ Encryption failed")
+                    create_notification("❌ Encryption failed", "error")
             else:
-                st.error("❌ No encryption key found")
+                create_notification("❌ No encryption key found", "error")
                 secrets_keys = list(st.secrets.keys())
                 st.write("Available secret keys:", secrets_keys)
         except Exception as e:
-            st.error(f"❌ Error: {str(e)}")
+            create_notification(f"❌ Error: {str(e)}", "error")
             st.code(traceback.format_exc())
     # In app.py, add this section to your auth_debug_page() function:
 
@@ -574,28 +722,28 @@ def auth_debug_page():
         # Check API key
         api_key = get_secret("OPENAI_API_KEY")
         if api_key:
-            st.success(f"✅ API Key found")
+            create_notification(f"✅ API Key found", "success")
             st.code(f"{api_key[:20]}...{api_key[-4:]}")
             
             # Validate key format
             if api_key.startswith("sk-") and len(api_key) > 40:
-                st.success("✅ Key format looks valid")
+                create_notification("✅ Key format looks valid", "success")
             else:
-                st.warning("⚠️ Key format might be invalid")
+                create_notification("⚠️ Key format might be invalid", "warning")
         else:
-            st.error("❌ No API key found")
-            st.info("Add OPENAI_API_KEY to your secrets.toml")
+            create_notification("❌ No API key found", "error")
+            create_notification("Add OPENAI_API_KEY to your secrets.toml", "info")
         
         # Show model configuration
         model = get_secret("OPENAI_MODEL", "gpt-4")
-        st.info(f"Default model: {model}")
+        create_notification(f"Default model: {model}", "info")
         
         # Show OpenAI version
         try:
             import openai
-            st.info(f"OpenAI library: v{getattr(openai, '__version__', 'unknown')}")
+            create_notification(f"OpenAI library: v{getattr(openai, '__version__', 'unknown')}", "info")
         except ImportError:
-            st.error("❌ OpenAI library not installed")
+            create_notification("❌ OpenAI library not installed", "error")
 
     with col2:
         st.write("**Quick Tests:**")
@@ -617,7 +765,7 @@ def auth_debug_page():
                     )
                     
                     result = response.choices[0].message.content
-                    st.success(f"✅ API Response: {result}")
+                    create_notification(f"✅ API Response: {result}", "success")
                     
                     # Show token usage
                     if hasattr(response, 'usage'):
@@ -628,16 +776,16 @@ def auth_debug_page():
                         })
                         
             except Exception as e:
-                st.error(f"❌ Error: {str(e)}")
+                create_notification(f"❌ Error: {str(e)}", "error")
                 
                 # Specific error handling
                 error_msg = str(e).lower()
                 if "insufficient_quota" in error_msg or "exceeded your current quota" in error_msg:
-                    st.error("💳 **No credits!** Add funds to your OpenAI account at https://platform.openai.com/account/billing")
+                    create_notification("💳 **No credits!** Add funds to your OpenAI account at https://platform.openai.com/account/billing", "error")
                 elif "invalid_api_key" in error_msg or "incorrect api key" in error_msg:
-                    st.error("🔑 **Invalid API key!** Get a new key at https://platform.openai.com/api-keys")
+                    create_notification("🔑 **Invalid API key!** Get a new key at https://platform.openai.com/api-keys", "error")
                 elif "model_not_found" in error_msg:
-                    st.error("🤖 **Model not available!** Your API key might not have access to this model.")
+                    create_notification("🤖 **Model not available!** Your API key might not have access to this model.", "error")
                 else:
                     st.code(str(e))
         
@@ -648,19 +796,19 @@ def auth_debug_page():
                 # Load designers
                 designers_df = load_designers()
                 if not designers_df.empty:
-                    st.success(f"✅ Loaded {len(designers_df)} designers")
+                    create_notification(f"✅ Loaded {len(designers_df)} designers", "success")
                     
                     # Test skill matching
                     test_request = "PowerPoint presentation in Arabic"
                     designer = designers_df.iloc[0]
                     score = simple_skill_match(test_request, designer)
                     
-                    st.info(f"Test match score for {designer['Name']}: {score}%")
+                    create_notification(f"Test match score for {designer['Name']}: {score}%", "info")
                 else:
-                    st.error("❌ No designers loaded")
+                    create_notification("❌ No designers loaded", "error")
                     
             except Exception as e:
-                st.error(f"❌ Designer selector error: {str(e)}")
+                create_notification(f"❌ Designer selector error: {str(e)}", "error")
 
     # Add a log viewer for OpenAI-specific logs
     with st.expander("OpenAI Debug Logs"):
@@ -671,7 +819,7 @@ def auth_debug_page():
                 openai_logs = [log for log in logs if 'openai' in log.lower() or 'api' in log.lower()]
                 st.text_area("Recent OpenAI logs:", '\n'.join(openai_logs[-20:]), height=200)
         except:
-            st.info("No logs available")
+            create_notification("No logs available", "info")
     # Google Auth Actions
     st.subheader("Google Authentication Actions")
     
@@ -683,7 +831,7 @@ def auth_debug_page():
             for key in keys:
                 if key in st.session_state:
                     del st.session_state[key]
-            st.success("Google authentication state reset")
+            create_notification("Google authentication state reset", "success")
             st.rerun()
     
     with col2:
@@ -702,102 +850,305 @@ def auth_debug_page():
 def login_page():
     from session_manager import SessionManager
 
-    # Touch the session so we don't expire mid‑login
+    # Touch the session so we don't expire mid-login
     SessionManager.update_activity()
     
-    # Add the logo with center positioning for the login page
-    add_logo(position="center", width=200)  # Bigger logo for login page
-
+    if "login_in_progress" in st.session_state:
+        return
+    
+    inject_enhanced_css()
+    style_form_container()
+    
     # Center the form in the middle column
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        st.title("Welcome")
-        st.subheader("Login with your Odoo credentials")
-
-        with st.form("login_form"):
-            email = st.text_input("Email", key="email_input", placeholder="your.email@company.com")
-            password = st.text_input("Password", type="password", key="password_input")
+        # Try to use the existing add_logo function
+        try:
+            # First, let's create a container for centered logo
+            st.markdown(
+                """
+                <div style="display: flex; justify-content: center; margin-bottom: 2rem;">
+                    <div id="logo-container"></div>
+                </div>
+                """, 
+                unsafe_allow_html=True
+            )
+            
+            # If logo is in session state, use it
+            if hasattr(st.session_state, 'logo_base64') and st.session_state.logo_base64:
+                logo_html = f"""
+                <div style="text-align: center; margin-bottom: 2rem; animation: float 3s ease-in-out infinite;">
+                    <img src="data:image/png;base64,{st.session_state.logo_base64}" 
+                         style="width: 150px; height: auto;">
+                </div>
+                <style>
+                @keyframes float {{
+                    0%, 100% {{ transform: translateY(0px); }}
+                    50% {{ transform: translateY(-10px); }}
+                }}
+                </style>
+                """
+                st.markdown(logo_html, unsafe_allow_html=True)
+            else:
+                # Try to load logo using add_logo function
+                add_logo(position="center", width=150)
+        except Exception as e:
+            # Fallback animated logo if add_logo fails
+            logger.error(f"Error loading logo: {e}")
+            logo_html = f"""
+            <div style="text-align: center; margin-bottom: 2rem;">
+                <div style="
+                    width: 120px;
+                    height: 120px;
+                    margin: 0 auto;
+                    background: linear-gradient(135deg, {COLORS['primary_purple']} 0%, {COLORS['dark_purple']} 100%);
+                    border-radius: 30px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    box-shadow: 0 10px 30px rgba(128, 90, 249, 0.3);
+                    animation: float 3s ease-in-out infinite;
+                ">
+                    <span style="color: white; font-size: 60px; font-weight: 700;">P</span>
+                </div>
+            </div>
+            <style>
+            @keyframes float {{
+                0%, 100% {{ transform: translateY(0px); }}
+                50% {{ transform: translateY(-10px); }}
+            }}
+            </style>
+            """
+            st.markdown(logo_html, unsafe_allow_html=True)
+        
+        # Use animated header
+        create_animated_header("Welcome to PrezLab", "Task Management System")
+        
+        # Add some spacing
+        st.markdown("<br>", unsafe_allow_html=True)
+        
+        # Login form with enhanced styling
+        with st.form("login_form", clear_on_submit=False):
+            # Form container styling
+            form_container = """
+            <style>
+            /* Enhanced form field styling */
+            div[data-testid="stForm"] {
+                background: rgba(255, 255, 255, 0.95);
+                backdrop-filter: blur(10px);
+                border-radius: 20px;
+                padding: 2rem;
+                box-shadow: 0 8px 32px rgba(128, 90, 249, 0.1);
+                border: 1px solid rgba(255, 255, 255, 0.3);
+            }
+            
+            /* Input field styling */
+            div[data-testid="stForm"] input {
+                background: white !important;
+                border: 2px solid #E4E3FF !important;
+                border-radius: 12px !important;
+                padding: 12px 16px !important;
+                font-size: 16px !important;
+                transition: all 0.3s ease !important;
+            }
+            
+            div[data-testid="stForm"] input:focus {
+                border-color: #805AF9 !important;
+                box-shadow: 0 0 0 3px rgba(128, 90, 249, 0.1) !important;
+            }
+            
+            /* Label styling */
+            div[data-testid="stForm"] label {
+                color: #2B1B4C !important;
+                font-weight: 600 !important;
+                margin-bottom: 8px !important;
+            }
+            
+            /* Submit button special styling */
+            div[data-testid="stForm"] button[type="submit"] {
+                background: linear-gradient(135deg, #805AF9 0%, #6B46E5 100%) !important;
+                color: white !important;
+                border: none !important;
+                padding: 12px 24px !important;
+                border-radius: 50px !important;
+                font-weight: 600 !important;
+                font-size: 16px !important;
+                width: 100% !important;
+                margin-top: 1rem !important;
+                transition: all 0.3s ease !important;
+                box-shadow: 0 4px 15px rgba(128, 90, 249, 0.3) !important;
+            }
+            
+            div[data-testid="stForm"] button[type="submit"]:hover {
+                transform: translateY(-2px) !important;
+                box-shadow: 0 6px 20px rgba(128, 90, 249, 0.4) !important;
+            }
+            </style>
+            """
+            st.markdown(form_container, unsafe_allow_html=True)
+            
+            # Form fields with icons
+            st.markdown(
+                """
+                <div style="margin-bottom: 1rem;">
+                    <label style="color: #2B1B4C; font-weight: 600; display: flex; align-items: center; gap: 8px;">
+                        <span style="font-size: 20px;">📧</span> Email
+                    </label>
+                </div>
+                """, 
+                unsafe_allow_html=True
+            )
+            email = st.text_input("Email", key="email_input", placeholder="your.email@company.com", label_visibility="collapsed")
+            
+            st.markdown(
+                """
+                <div style="margin-bottom: 1rem;">
+                    <label style="color: #2B1B4C; font-weight: 600; display: flex; align-items: center; gap: 8px;">
+                        <span style="font-size: 20px;">🔒</span> Password
+                    </label>
+                </div>
+                """, 
+                unsafe_allow_html=True
+            )
+            password = st.text_input("Password", type="password", key="password_input", label_visibility="collapsed")
+            
+            st.markdown(
+                """
+                <div style="margin-bottom: 1rem;">
+                    <label style="color: #2B1B4C; font-weight: 600; display: flex; align-items: center; gap: 8px;">
+                        <span style="font-size: 20px;">🌐</span> Odoo URL
+                    </label>
+                </div>
+                """, 
+                unsafe_allow_html=True
+            )
             odoo_url = st.text_input("Odoo URL", key="odoo_url_input", 
                                     value="https://prezlab-staging-19128678.dev.odoo.com",
-                                    help="Enter your Odoo instance URL")
-            submit = st.form_submit_button("Login")
+                                    help="Enter your Odoo instance URL",
+                                    label_visibility="collapsed")
+            
+            # Submit button
+            submit = st.form_submit_button("Sign In", use_container_width=True)
 
             if not submit:
                 return
 
-            # 1) Require all fields
+            # Validation
             if not email or not password or not odoo_url:
-                st.warning("Please enter all fields.")
+                create_notification("Please enter all fields.", "warning")
                 return
 
-            # 2) Try to authenticate with Odoo
+            # Try to authenticate with Odoo
             try:
                 import xmlrpc.client
                 
-                # Extract database name from URL if it's a standard Odoo URL
-                import re
-                db_match = re.search(r'https://([^.]+)(?:-\d+)?\.', odoo_url)
-                if db_match:
-                    odoo_db = db_match.group(1)
-                    # Handle staging/production URLs
-                    if '-staging-' in odoo_url:
-                        db_parts = odoo_url.split('.')[0].split('//')[-1]
-                        odoo_db = db_parts
-                else:
-                    # Fallback - ask user to provide DB name
-                    st.error("Could not extract database name from URL. Please contact support.")
-                    return
-                
-                # Test connection
-                common = xmlrpc.client.ServerProxy(f"{odoo_url}/xmlrpc/2/common", allow_none=True)
-                uid = common.authenticate(odoo_db, email, password, {})
-                
-                if not uid:
-                    st.error("Invalid credentials. Please check your email and password.")
-                    return
-                
-                # Get user's name from Odoo
-                models = xmlrpc.client.ServerProxy(f"{odoo_url}/xmlrpc/2/object", allow_none=True)
-                user_info = models.execute_kw(
-                    odoo_db, uid, password,
-                    'res.users', 'read',
-                    [[uid]],
-                    {'fields': ['name', 'email']}
-                )
-                
-                user_name = user_info[0]['name'] if user_info else email
-                
-                # Store Odoo credentials in session state
-                st.session_state.odoo_credentials = {
-                    'url': odoo_url,
-                    'db': odoo_db,
-                    'email': email,
-                    'password': password,
-                    'uid': uid,
-                    'name': user_name
-                }
-                
-                # Log into Streamlit session using email as username
-                SessionManager.login(email, expiry_hours=8)
-                
-                st.success(f"Welcome, {user_name}!")
-                st.rerun()
-                
+                # Show loading animation
+                with st.spinner("Authenticating..."):
+                    # Extract database name from URL
+                    import re
+                    db_match = re.search(r'https://([^.]+)(?:-\d+)?\.', odoo_url)
+                    if db_match:
+                        odoo_db = db_match.group(1)
+                        # Handle staging/production URLs
+                        if '-staging-' in odoo_url:
+                            db_parts = odoo_url.split('.')[0].split('//')[-1]
+                            odoo_db = db_parts
+                    else:
+                        create_notification("Could not extract database name from URL. Please contact support.", "error")
+                        return
+                    
+                    # Test connection
+                    common = xmlrpc.client.ServerProxy(f"{odoo_url}/xmlrpc/2/common", allow_none=True)
+                    uid = common.authenticate(odoo_db, email, password, {})
+                    
+                    if not uid:
+                        create_notification("Invalid credentials. Please check your email and password.", "error")
+                        return
+                    
+                    # Get user's name from Odoo
+                    models = xmlrpc.client.ServerProxy(f"{odoo_url}/xmlrpc/2/object", allow_none=True)
+                    user_info = models.execute_kw(
+                        odoo_db, uid, password,
+                        'res.users', 'read',
+                        [[uid]],
+                        {'fields': ['name', 'email']}
+                    )
+                    
+                    user_name = user_info[0]['name'] if user_info else email
+                    
+                    # Store Odoo credentials in session state
+                    st.session_state.odoo_credentials = {
+                        'url': odoo_url,
+                        'db': odoo_db,
+                        'email': email,
+                        'password': password,
+                        'uid': uid,
+                        'name': user_name
+                    }
+                    
+                    # Log into Streamlit session using email as username
+                    SessionManager.login(email, expiry_hours=8)
+                    
+                    # Success animation
+                    success_html = f"""
+                    <div style="text-align: center; margin: 1rem 0;">
+                        <div style="
+                            width: 60px;
+                            height: 60px;
+                            margin: 0 auto;
+                            background: linear-gradient(135deg, {COLORS['success']} 0%, {COLORS['green']} 100%);
+                            border-radius: 50%;
+                            display: flex;
+                            align-items: center;
+                            justify-content: center;
+                            animation: scaleIn 0.5s ease;
+                        ">
+                            <span style="color: white; font-size: 30px;">✓</span>
+                        </div>
+                    </div>
+                    <style>
+                    @keyframes scaleIn {{
+                        0% {{ transform: scale(0); opacity: 0; }}
+                        100% {{ transform: scale(1); opacity: 1; }}
+                    }}
+                    </style>
+                    """
+                    st.markdown(success_html, unsafe_allow_html=True)
+                    
+                    create_notification(f"Welcome, {user_name}!", "success")
+                    st.rerun()
+                    
             except Exception as e:
-                st.error(f"Connection failed: {str(e)}")
+                create_notification(f"Connection failed: {str(e)}", "error")
                 logger.exception("Odoo login error")
                 return
 
-
+        # Footer
+        st.markdown(
+            f"""
+            <div style="text-align: center; margin-top: 3rem; color: {COLORS['dark_gray']};">
+                <p style="font-size: 14px;">
+                    Need help? Contact your system administrator<br>
+                    © 2025 PrezLab TMS - All rights reserved
+                </p>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
 # -------------------------------
 # 2) REQUEST TYPE SELECTION PAGE
 # -------------------------------
 def type_selection_page():
-    st.title("Task Management Dashboard")
+
+    inject_enhanced_css()
+
+    # ADD this instead:
+    user_name = st.session_state.get('odoo_credentials', {}).get('name', st.session_state.user['username'])
+    create_animated_header(f"Welcome back, {user_name}!", "What would you like to create today?")
     
-    # User greeting
-    st.markdown(f"### Welcome, {st.session_state.user['username']}!")
-    st.markdown("Select the type of request you want to create.")
+
+    
+    st.markdown("<br><br>", unsafe_allow_html=True)
     
     col1, col2 = st.columns(2)
     
@@ -827,8 +1178,11 @@ def type_selection_page():
 # -------------------------------
 def get_sales_order_lines(models, uid, sales_order_name):
     try:
+        odoo_db = st.session_state.odoo_credentials['db']
+        odoo_password = st.session_state.odoo_credentials['password']
+        
         so_data = models.execute_kw(
-            ODOO_DB, uid, ODOO_PASSWORD,
+            odoo_db, uid, odoo_password,
             'sale.order', 'search_read',
             [[['name', '=', sales_order_name]]],
             {'fields': ['order_line']}
@@ -847,18 +1201,26 @@ def get_sales_order_lines(models, uid, sales_order_name):
         return lines
     except Exception as e:
         logger.error(f"Error fetching sales order lines: {e}")
-        st.error(f"Error fetching sales order lines. Please try again.")
+        create_notification(f"Error fetching sales order lines. Please try again.", "error")
         return []
 
 # -------------------------------
 # 3A) SALES ORDER PAGE (Ad-hoc Step 1)
 # -------------------------------
 def sales_order_page():
-    st.title("Via Sales Order: Select Sales Order")
+
+    inject_enhanced_css()
     
+    
+    create_animated_header("Via Sales Order", "Select Sales Order")
+
     # Progress bar
-    st.progress(50, text="Step 2 of 4: Select Sales Order")
-    
+    create_progress_steps(
+        current_step=2,
+        total_steps=5,
+        step_labels=["Company", "Sales Order", "Email Analysis", "Parent Task", "Subtasks"]
+    ) 
+        
     # Navigation
     cols = st.columns([1, 5])
     with cols[0]:
@@ -868,10 +1230,12 @@ def sales_order_page():
             st.rerun()
     
     # Display selected company
-    with st.container(border=True):
-        selected_company = st.session_state.get("selected_company", "")
-        st.markdown(f"**Selected Company:** {selected_company}")
-    
+    def display_company():
+        st.markdown(f"**Selected Company:** {st.session_state.get('selected_company', '')}")
+
+    create_glass_card(content=display_company, title="Current Selection", icon="🏢")
+    selected_company = st.session_state.get("selected_company", "")
+
     # Add this code to detect company changes and force refresh
     if "last_company_for_sales_orders" in st.session_state:
         if st.session_state.last_company_for_sales_orders != selected_company:
@@ -889,7 +1253,7 @@ def sales_order_page():
                 st.session_state.odoo_uid = uid
                 st.session_state.odoo_models = models
             else:
-                st.error("Failed to connect to Odoo. Please check your credentials.")
+                create_notification("Failed to connect to Odoo. Please check your credentials.", "error")
                 return
     else:
         uid = st.session_state.odoo_uid
@@ -903,10 +1267,11 @@ def sales_order_page():
                 st.session_state.sales_orders = orders
                 st.session_state.refresh_sales_orders = False
             else:
-                st.warning(f"No sales orders found for {selected_company} or error fetching orders.")
+                create_notification(f"No sales orders found for {selected_company} or error fetching orders.", "warning")
                 st.session_state.sales_orders = []
 
     # Create form for sales order selection
+    style_form_container()
     with st.form("sales_order_form"):
         st.subheader("Select Sales Order")
         
@@ -958,17 +1323,22 @@ def sales_order_page():
             st.session_state.subtask_index = 0
             st.session_state.adhoc_subtasks = []
             st.session_state.adhoc_sales_order_done = True
-            st.success("Sales order information saved. Proceeding to parent task details.")
+            create_notification("Sales order information saved. Proceeding to parent task details.", "success")
             st.rerun()
 
 # -------------------------------
 # 3B) AD-HOC PARENT TASK PAGE (Ad-hoc Step 2)
 # -------------------------------
 def adhoc_parent_task_page():
-    st.title("Via Sales Order: Parent Task")
+    inject_enhanced_css()
+    create_animated_header("Via Sales Order", "Parent Task Details")
     
     # Progress bar
-    st.progress(80, text="Step 4 of 5: Parent Task Details")
+    create_progress_steps(
+        current_step=4,
+        total_steps=5,
+        step_labels=["Company", "Sales Order", "Email Analysis", "Parent Task", "Subtasks"]
+    )
     
     # Clear the return flag if it exists
     st.session_state.pop("returning_to_parent", False) if "returning_to_parent" in st.session_state else None
@@ -980,23 +1350,18 @@ def adhoc_parent_task_page():
             st.session_state.pop("adhoc_sales_order_done", None)
             st.rerun()
 
-    # Display current selection
-    with st.container(border=True):
-        selected_company = st.session_state.get("selected_company", "")
-        parent_sales_order_item = st.session_state.get("parent_sales_order_item", "")
-        customer = st.session_state.get("customer", "")
-        project = st.session_state.get("project", "")
-        
-        st.markdown("### Current Selection")
+    def display_current_selection():
         col1, col2, col3, col4 = st.columns(4)
         with col1:
-            st.markdown(f"**Company:** {selected_company}")
+            st.markdown(f"**Company:** {st.session_state.get('selected_company', '')}")
         with col2:
-            st.markdown(f"**Sales Order:** {parent_sales_order_item}")
+            st.markdown(f"**Sales Order:** {st.session_state.get('parent_sales_order_item', '')}")
         with col3:
-            st.markdown(f"**Customer:** {customer}")
+            st.markdown(f"**Customer:** {st.session_state.get('customer', '')}")
         with col4:
-            st.markdown(f"**Project:** {project}")
+            st.markdown(f"**Project:** {st.session_state.get('project', '')}")
+
+    create_glass_card(content=display_current_selection, title="Current Selection", icon="📋")
     
     uid = st.session_state.odoo_uid
     models = st.session_state.odoo_models
@@ -1006,6 +1371,7 @@ def adhoc_parent_task_page():
     email_analysis_skipped = st.session_state.get("email_analysis_skipped", True)
 
     # Form for parent task details
+    style_form_container()
     with st.form("parent_task_form"):
         st.subheader("Parent Task Details")
         
@@ -1067,7 +1433,7 @@ def adhoc_parent_task_page():
                     format_func=lambda x: x[1]  # Display the name part
                 )
             else:
-                st.error("No guidelines found. This field is required.")
+                create_notification("No guidelines found. This field is required.", "error")
                 guidelines_parent = None
         # Dates
         st.subheader("Task Timeline")
@@ -1112,20 +1478,20 @@ def adhoc_parent_task_page():
         if submit:
             # Validate inputs
             if not parent_task_title:
-                st.error("Please enter a parent task title.")
+                create_notification("Please enter a parent task title.", "error")
                 return
             
             # Check if required fields are selected (not None or empty)
             if not target_language_parent:
-                st.error("Please select a target language.")
+                create_notification("Please select a target language.", "error")
                 return
                 
             if client_success_executive is None or (isinstance(client_success_executive, tuple) and client_success_executive[0] is None):
-                st.error("Please select a client success executive.")
+                create_notification("Please select a client success executive.", "error")
                 return
                 
             if guidelines_parent is None or (isinstance(guidelines_parent, tuple) and guidelines_parent[0] is None):
-                st.error("Please select guidelines.")
+                create_notification("Please select guidelines.", "error")
                 return
             # Save to session state
             st.session_state.adhoc_parent_task_title = parent_task_title
@@ -1138,17 +1504,22 @@ def adhoc_parent_task_page():
             st.session_state.adhoc_parent_description = parent_description
             st.session_state.adhoc_parent_input_done = True
             
-            st.success("Parent task details saved. Proceeding to subtasks.")
+            create_notification("Parent task details saved. Proceeding to subtasks.", "success")
             st.rerun()
 
 # -------------------------------
 # 3C) AD-HOC SUBTASK PAGE (Ad-hoc Step 3)
 # -------------------------------
 def adhoc_subtask_page():
-    st.title("Via Sales Order: Subtasks")
+    inject_enhanced_css()
+    create_animated_header("Adhoc Subtask Page", "Create the subtasks")    
     
     # Progress bar
-    st.progress(100, text="Step 5 of 5: Subtask Details")
+    create_progress_steps(
+        current_step=5,
+        total_steps=5,
+        step_labels=["Company", "Sales Order", "Email Analysis", "Parent Task", "Subtasks"]
+    )
     
     # Navigation
     cols = st.columns([1, 5])
@@ -1201,18 +1572,21 @@ def adhoc_subtask_page():
     so_items = st.session_state.get("so_items", [])
     
     # Display subtasks in progress
+    # Display subtasks in progress
     if st.session_state.adhoc_subtasks:
-        with st.container(border=True):
-            st.subheader("Subtasks Added")
+        def display_subtasks():
             for i, task in enumerate(st.session_state.adhoc_subtasks):
                 st.markdown(f"**Subtask {i+1}:** {task['subtask_title']} (Due: {task['client_due_date_subtask']})")
+        
+        create_glass_card(content=display_subtasks, title="Subtasks Added", icon="✅")
     
     # Check if we have more subtasks to add
     if idx >= len(so_items):
-        st.warning("No more sales order items available for subtasks.")
+        create_notification("No more sales order items available for subtasks.", "warning")
         
         # Allow adding a custom subtask if needed
         with st.expander("Add Custom Subtask", expanded=True):
+            style_form_container()
             with st.form("custom_subtask_form"):
                 custom_subtask_title = st.text_input("Custom Subtask Title")
                 
@@ -1239,7 +1613,7 @@ def adhoc_subtask_page():
                 
                 if add_custom:
                     if not custom_subtask_title:
-                        st.error("Please enter a subtask title.")
+                        create_notification("Please enter a subtask title.", "error")
                         return
                         
                     new_subtask = {
@@ -1253,13 +1627,16 @@ def adhoc_subtask_page():
                         "client_due_date_subtask": str(client_due_date_subtask)
                     }
                     st.session_state.adhoc_subtasks.append(new_subtask)
-                    st.success(f"Added custom subtask: {custom_subtask_title}")
+                    create_notification(f"Added custom subtask: {custom_subtask_title}", "success")
                     st.rerun()
         
         # Show submission button
         if st.button("Submit All Tasks", use_container_width=True, type="primary"):
-            with st.spinner("Creating tasks in Odoo..."):
-                finalize_adhoc_subtasks()
+            loading_placeholder = st.empty()
+            with loading_placeholder.container():
+                show_loading_animation("Creating tasks in Odoo...")
+            finalize_adhoc_subtasks()
+            loading_placeholder.empty()
         
         return
     
@@ -1277,6 +1654,7 @@ def adhoc_subtask_page():
     line_name = current_line.get("name", f"Line #{idx+1}") if current_line else f"Subtask #{idx+1}"
     
     # Subtask form
+    style_form_container()
     with st.form(f"subtask_form_{idx}"):
         st.subheader(f"Subtask for Sales Order Line: {line_name}")
         
@@ -1301,7 +1679,7 @@ def adhoc_subtask_page():
                 )
             else:
                 # Fallback to text input with warning
-                st.warning("No service categories found. Manual entry not recommended.")
+                create_notification("No service categories found. Manual entry not recommended.", "warning")
                 service_category_1_text = st.text_input("Service Category 1 (manual)")
                 # Create a dummy tuple with -1 as ID to indicate this is not a valid ID
                 service_category_1 = (-1, service_category_1_text) if service_category_1_text else None
@@ -1319,7 +1697,7 @@ def adhoc_subtask_page():
                 )
             else:
                 # Fallback to text input with warning
-                st.warning("No service categories found. Manual entry not recommended.")
+                create_notification("No service categories found. Manual entry not recommended.", "warning")
                 service_category_2_text = st.text_input("Service Category 2 (manual)")
                 # Create a dummy tuple with -1 as ID to indicate this is not a valid ID
                 service_category_2 = (-1, service_category_2_text) if service_category_2_text else None
@@ -1347,7 +1725,7 @@ def adhoc_subtask_page():
         if next_subtask or finish_all:
             # Validate input
             if not subtask_title:
-                st.error("Please enter a subtask title.")
+                create_notification("Please enter a subtask title.", "error")
                 return
                 
             # Create new subtask
@@ -1368,10 +1746,9 @@ def adhoc_subtask_page():
             
             # If finishing, submit all; otherwise, continue to next subtask
             if finish_all:
-                with st.spinner("Creating tasks in Odoo..."):
-                    finalize_adhoc_subtasks()
+                finalize_adhoc_subtasks()
             else:
-                st.success(f"Subtask saved: {subtask_title}")
+                create_notification(f"Subtask saved: {subtask_title}", "success")
                 st.rerun()
 
 # -------------------------------
@@ -1385,6 +1762,8 @@ def finalize_adhoc_subtasks():
     from google_drive import create_folder_structure
     uid = st.session_state.odoo_uid
     models = st.session_state.odoo_models
+
+    loading_placeholder = st.empty()
 
     # Get parent task data
     selected_company = st.session_state.get("selected_company", "")
@@ -1401,10 +1780,12 @@ def finalize_adhoc_subtasks():
     parent_description = st.session_state.get("adhoc_parent_description", "")
 
     try:
+        # Step 1: Create parent task
+        # Removed spinner for 'Creating tasks in Odoo...'
         # Get project ID
         project_id = get_project_id_by_name(models, uid, project_name)
         if not project_id:
-            st.error(f"Could not find project with name: {project_name}")
+            create_notification(f"Could not find project with name: {project_name}", "error")
             return
             
         # Ensure project_id is integer
@@ -1412,20 +1793,20 @@ def finalize_adhoc_subtasks():
             try:
                 project_id = int(project_id)
             except (ValueError, TypeError) as e:
-                st.error(f"Invalid project ID format: {e}")
+                create_notification(f"Invalid project ID format: {e}", "error")
                 logger.error(f"Invalid project ID format: {project_id}, error: {e}")
                 return
         
         # Handle user ID
         user_id = client_success_executive[0] if isinstance(client_success_executive, tuple) and client_success_executive[0] is not None else client_success_executive
         if user_id is None:
-            st.error("Invalid client success executive selection")
+            create_notification("Invalid client success executive selection", "error")
             return
         if not isinstance(user_id, int):
             try:
                 user_id = int(user_id)
             except (ValueError, TypeError) as e:
-                st.error(f"Invalid user ID format: {e}")
+                create_notification(f"Invalid user ID format: {e}", "error")
                 logger.error(f"Invalid user ID format: {user_id}, error: {e}")
                 return
         
@@ -1460,53 +1841,58 @@ def finalize_adhoc_subtasks():
         # Create parent task in Odoo
         parent_task_id = create_odoo_task(parent_task_data)
         if not parent_task_id:
-            st.error("Failed to create parent task in Odoo.")
+            create_notification("Failed to create parent task in Odoo.", "error")
             return
             
-        st.success(f"Created Parent Task in Odoo (ID: {parent_task_id})")
+        create_notification(f"Created Parent Task in Odoo (ID: {parent_task_id})", "success")
         
         # Create Google Drive folder structure for this parent task
-        with st.spinner("Creating Google Drive folder structure for task..."):
-            # Sanitize folder name (replace characters not allowed in file names)
-            folder_name = f"{parent_task_title} - {parent_task_id}"
-            folder_name = folder_name.replace('/', '-').replace('\\', '-')
+        with loading_placeholder.container():
+            show_loading_animation("Creating Google Drive folders...")
+        # Sanitize folder name (replace characters not allowed in file names)
+        folder_name = f"{parent_task_title} - {parent_task_id}"
+        folder_name = folder_name.replace('/', '-').replace('\\', '-')
             
-            # Create folder structure with subfolders
-            from google_drive import create_folder_structure
-            folder_structure = create_folder_structure(
-                folder_name, 
-                subfolders=["MATERIAL", "DELIVERABLE"]
-            )
+        # Create folder structure with subfolders
+        from google_drive import create_folder_structure
+        folder_structure = create_folder_structure(
+            folder_name, 
+            subfolders=["MATERIAL", "DELIVERABLE"]
+        )
             
-            if folder_structure:
-                # Store main folder info in session state
-                st.session_state.drive_folder_id = folder_structure['main_folder_id']
-                st.session_state.drive_folder_link = folder_structure['main_folder_link']
-                st.session_state.folder_structure = folder_structure
+        if folder_structure:
+            # Store main folder info in session state
+            st.session_state.drive_folder_id = folder_structure['main_folder_id']
+            st.session_state.drive_folder_link = folder_structure['main_folder_link']
+            st.session_state.folder_structure = folder_structure
                 
-                # Update the parent task with the folder links
-                try:
-                    # Create a nicely formatted description with folder links
-                    updated_description = f"{parent_description}\n\n"
-                    updated_description += f"📁 **Google Drive Folders:**\n"
-                    updated_description += f"- Main Folder: {folder_structure['main_folder_url']}\n"
+            # Update the parent task with the folder links
+            try:
+                # Create a nicely formatted description with folder links
+                updated_description = f"{parent_description}\n\n"
+                updated_description += f"📁 **Google Drive Folders:**\n"
+                updated_description += f"- Main Folder: {folder_structure['main_folder_url']}\n"
                     
-                    # Add subfolder links if available
-                    for subfolder_name, subfolder_info in folder_structure['subfolders'].items():
-                        updated_description += f"- {subfolder_name}: {subfolder_info['url']}\n"
+                # Add subfolder links if available
+                for subfolder_name, subfolder_info in folder_structure['subfolders'].items():
+                    updated_description += f"- {subfolder_name}: {subfolder_info['url']}\n"
                     
-                    models.execute_kw(
-                        ODOO_DB, uid, ODOO_PASSWORD,
-                        'project.task', 'write',
-                        [[parent_task_id], {'description': updated_description}]
-                    )
-                    logger.info(f"Updated task {parent_task_id} with Drive folder structure links")
-                except Exception as e:
-                    logger.warning(f"Could not update task with folder links: {e}")
+                models.execute_kw(
+                    ODOO_DB, uid, ODOO_PASSWORD,
+                    'project.task', 'write',
+                    [[parent_task_id], {'description': updated_description}]
+                )
+                logger.info(f"Updated task {parent_task_id} with Drive folder structure links")
+            except Exception as e:
+                logger.warning(f"Could not update task with folder links: {e}")
                     
-                st.success(f"Created folder structure with MATERIAL and DELIVERABLE subfolders")
-            else:
-                st.warning("Could not create Google Drive folder. Please check logs for details.")
+            create_notification(f"Created folder structure with MATERIAL and DELIVERABLE subfolders", "success")
+        else:
+            create_notification("Could not create Google Drive folder. Please check logs for details.", "warning")
+        
+        with loading_placeholder.container():
+            show_loading_animation("Creating subtasks in Odoo...")
+
         # Create subtasks
         subtasks = st.session_state.adhoc_subtasks
         created_subtasks = []
@@ -1584,13 +1970,13 @@ def finalize_adhoc_subtasks():
             subtask_id = create_odoo_task(subtask_data)
             if subtask_id:
                 created_subtasks.append(subtask_id)
-                st.success(f"Created Subtask {i+1} in Odoo (ID: {subtask_id})")
+                create_notification(f"Created Subtask {i+1} in Odoo (ID: {subtask_id})", "success")
             else:
-                st.error(f"Failed to create subtask {i+1} in Odoo.")
-        
+                create_notification(f"Failed to create subtask {i+1} in Odoo.", "error")
+        loading_placeholder.empty()
         # After tasks are created successfully
         if created_subtasks:
-            st.success(f"Successfully created {len(created_subtasks)} subtasks!")
+            create_notification(f"Successfully created {len(created_subtasks)} subtasks!", "success")
             
             # Store created tasks and parent task ID in session state for designer selection
             created_tasks = []
@@ -1612,14 +1998,12 @@ def finalize_adhoc_subtasks():
             st.session_state.designer_selection = True
             
             # Summary container
-            with st.container(border=True):
-                st.subheader("Task Creation Summary")
+            def display_task_summary():
                 st.markdown(f"**Parent Task:** {parent_task_title} (ID: {parent_task_id})")
                 st.markdown(f"**Subtasks Created:** {len(created_subtasks)}")
                 st.markdown(f"**Company:** {selected_company}")
                 st.markdown(f"**Project:** {project_name}")
                 st.markdown(f"**Client:** {customer}")
-                
                 
                 if 'drive_folder_id' in st.session_state and 'drive_folder_link' in st.session_state:
                     st.markdown(f"**📁 Main Folder:** [Open Folder]({st.session_state.drive_folder_link})")
@@ -1629,27 +2013,32 @@ def finalize_adhoc_subtasks():
                         for subfolder_name, subfolder_info in st.session_state.folder_structure['subfolders'].items():
                             st.markdown(f"**📁 {subfolder_name}:** [Open Folder]({subfolder_info['link']})")
 
+            create_glass_card(content=display_task_summary, title="Task Creation Summary", icon="✅")
 
-                # Display a message to help user understand what's happening
-                st.info("Click the button below to proceed to designer selection, or you can view the task details in Odoo.")
-                st.session_state.designer_selection = True  # This flag is already being checked elsewhere
-                st.rerun()
-
+            # Keep the display message OUTSIDE the glass card
+            create_notification("Click the button below to proceed to designer selection, or you can view the task details in Odoo.", "info")
+            st.session_state.designer_selection = True  # This flag is already being checked elsewhere
+            st.rerun()
 
 
     except Exception as e:
-        st.error(f"An error occurred: {str(e)}")
+        loading_placeholder.empty()  # Clear on error too
+        create_notification(f"An error occurred: {str(e)}", "error")
         logger.error(f"Error in finalize_adhoc_subtasks: {e}", exc_info=True)
 
 # -------------------------------
 # RETAINER FLOW
 # -------------------------------
 def retainer_parent_task_page():
-    st.title("Via Project: Parent Task")
+    inject_enhanced_css()
+    create_animated_header("Retainer Parent Task Page", "Create the parent task")
     
     # Progress bar
-    st.progress(80, text="Step 3 of 4: Parent Task Details")
-    
+    create_progress_steps(
+        current_step=3,
+        total_steps=4,
+        step_labels=["Company", "Parent Task", "Subtask", "Complete"]
+    )    
     # Navigation
     cols = st.columns([1, 5])
     with cols[0]:
@@ -1658,10 +2047,23 @@ def retainer_parent_task_page():
             st.rerun()
             
     # Display selected company
-    with st.container(border=True):
-        selected_company = st.session_state.get("selected_company", "")
-        st.markdown(f"**Selected Company:** {selected_company}")
+    # Display selected company
+    def display_company():
+        st.markdown(f"**Selected Company:** {st.session_state.get('selected_company', '')}")
+
+    create_glass_card(content=display_company, title="Current Selection", icon="🏢")
     
+    selected_company = st.session_state.get("selected_company", "")
+
+    # Add this code to detect company changes and force refresh
+    if "last_company_for_sales_orders" in st.session_state:
+        if st.session_state.last_company_for_sales_orders != selected_company:
+            # Company changed, force refresh sales orders
+            st.session_state.refresh_sales_orders = True
+            
+    # Update the tracked company
+    st.session_state.last_company_for_sales_orders = selected_company
+
     # Connect to Odoo if not already connected
     if "odoo_uid" not in st.session_state or "odoo_models" not in st.session_state:
         with st.spinner("Connecting to Odoo..."):
@@ -1670,13 +2072,14 @@ def retainer_parent_task_page():
                 st.session_state.odoo_uid = uid
                 st.session_state.odoo_models = models
             else:
-                st.error("Failed to connect to Odoo. Please check your credentials.")
+                create_notification("Failed to connect to Odoo. Please check your credentials.", "error")
                 return
     else:
         uid = st.session_state.odoo_uid
         models = st.session_state.odoo_models
 
     # Form for retainer parent task
+    style_form_container()
     with st.form("retainer_parent_form"):
         st.subheader("Retainer Project Fields")
         
@@ -1752,20 +2155,20 @@ def retainer_parent_task_page():
         if submit:
             # Validate input
             if not parent_project or not parent_task_title or not retainer_customer:
-                st.error("Please fill in all required fields.")
+                create_notification("Please fill in all required fields.", "error")
                 return
             
             # Check if required dropdowns are selected
             if not retainer_target_language:
-                st.error("Please select a target language.")
+                create_notification("Please select a target language.", "error")
                 return
                 
             if retainer_client_success_exec is None or (isinstance(retainer_client_success_exec, tuple) and retainer_client_success_exec[0] is None):
-                st.error("Please select a client success executive.")
+                create_notification("Please select a client success executive.", "error")
                 return
                 
             if retainer_guidelines is None or (isinstance(retainer_guidelines, tuple) and retainer_guidelines[0] is None):
-                st.error("Please select guidelines.")
+                create_notification("Please select guidelines.", "error")
                 return
                 
             # Save to session state
@@ -1779,15 +2182,19 @@ def retainer_parent_task_page():
             st.session_state.retainer_internal_dt = retainer_internal_dt
             st.session_state.retainer_parent_input_done = True
             
-            st.success("Parent task details saved. Proceeding to subtask.")
+            create_notification("Parent task details saved. Proceeding to subtask.", "success")
             st.rerun()
 
 def retainer_subtask_page():
-    st.title("Via Project: Subtask")
+    inject_enhanced_css() 
+    create_animated_header("Retainer Subtask Page", "Create the subtasks")
     
     # Progress bar
-    st.progress(100, text="Step 4 of 4: Subtask Details")
-    
+    create_progress_steps(
+        current_step=4,
+        total_steps=4,
+        step_labels=["Company", "Parent Task", "Subtask", "Complete"]
+    )
     # Navigation
     cols = st.columns([1, 5])
     with cols[0]:
@@ -1810,8 +2217,8 @@ def retainer_subtask_page():
     retainer_internal_dt = st.session_state.get("retainer_internal_dt", datetime.now())
 
     # Display parent task summary
-    with st.container(border=True):
-        st.subheader("Parent Task Summary")
+    # Display parent task summary
+    def display_parent_summary():
         col1, col2 = st.columns(2)
         with col1:
             st.markdown(f"**Company:** {selected_company}")
@@ -1823,7 +2230,9 @@ def retainer_subtask_page():
             st.markdown(f"**Request Receipt:** {retainer_request_receipt_dt.strftime('%Y-%m-%d %H:%M')}")
             st.markdown(f"**Internal Due Date:** {retainer_internal_dt.strftime('%Y-%m-%d %H:%M')}")
 
+    create_glass_card(content=display_parent_summary, title="Parent Task Summary", icon="📋")
     # Subtask form
+    style_form_container()
     with st.form("retainer_subtask_form"):
         st.subheader("Subtask Details")
         
@@ -1873,13 +2282,13 @@ def retainer_subtask_page():
         if submit_request:
             # Validate inputs
             if not subtask_title:
-                st.error("Please enter a subtask title.")
+                create_notification("Please enter a subtask title.", "error")
                 return
                 
             # Get project ID
             project_id = get_project_id_by_name(models, uid, parent_project_name)
             if not project_id:
-                st.error(f"Could not find a project with name: {parent_project_name}")
+                create_notification(f"Could not find a project with name: {parent_project_name}", "error")
                 return
                 
             # Ensure project_id is integer
@@ -1887,20 +2296,20 @@ def retainer_subtask_page():
                 try:
                     project_id = int(project_id)
                 except (ValueError, TypeError) as e:
-                    st.error(f"Invalid project ID format: {e}")
+                    create_notification(f"Invalid project ID format: {e}", "error")
                     logger.error(f"Invalid project ID format: {project_id}, error: {e}")
                     return
             
             # Handle user ID
             user_id = retainer_client_success_exec[0] if isinstance(retainer_client_success_exec, tuple) and retainer_client_success_exec[0] is not None else retainer_client_success_exec
             if user_id is None:
-                st.error("Invalid client success executive selection")
+                create_notification("Invalid client success executive selection", "error")
                 return
             if not isinstance(user_id, int):
                 try:
                     user_id = int(user_id)
                 except (ValueError, TypeError) as e:
-                    st.error(f"Invalid user ID format: {e}")
+                    create_notification(f"Invalid user ID format: {e}", "error")
                     logger.error(f"Invalid user ID format: {user_id}, error: {e}")
                     return
             
@@ -1958,10 +2367,10 @@ def retainer_subtask_page():
                     # Create parent task in Odoo
                     parent_task_id = create_odoo_task(parent_task_data)
                     if not parent_task_id:
-                        st.error("Failed to create parent task in Odoo.")
+                        create_notification("Failed to create parent task in Odoo.", "error")
                         return
                         
-                    st.success(f"Created Parent Task in Odoo (ID: {parent_task_id})")
+                    create_notification(f"Created Parent Task in Odoo (ID: {parent_task_id})", "success")
                 
                 # STEP 2: CREATE SUBTASK
                 with st.spinner("Creating subtask in Odoo..."):
@@ -2033,10 +2442,10 @@ def retainer_subtask_page():
                     # Create subtask in Odoo
                     subtask_id = create_odoo_task(subtask_data)
                     if not subtask_id:
-                        st.error("Failed to create subtask in Odoo.")
+                        create_notification("Failed to create subtask in Odoo.", "error")
                         return
                         
-                    st.success(f"Created Subtask in Odoo (ID: {subtask_id})")
+                    create_notification(f"Created Subtask in Odoo (ID: {subtask_id})", "success")
                 
                 # STEP 3: CREATE GOOGLE DRIVE FOLDER STRUCTURE
                 with st.spinner("Creating Google Drive folder structure for task..."):
@@ -2099,11 +2508,11 @@ def retainer_subtask_page():
                             )
                             
                             logger.info(f"Updated tasks with Drive folder structure links")
-                            st.success(f"Created folder structure with MATERIAL and DELIVERABLE subfolders")
+                            create_notification(f"Created folder structure with MATERIAL and DELIVERABLE subfolders", "success")
                         except Exception as e:
                             logger.warning(f"Could not update tasks with folder links: {e}")
                     else:
-                        st.warning("Could not create Google Drive folder. Please check logs for details.")
+                        create_notification("Could not create Google Drive folder. Please check logs for details.", "warning")
                 
                 # STEP 4: PREPARE FOR DESIGNER SELECTION
                 with st.spinner("Preparing for designer selection..."):
@@ -2126,15 +2535,15 @@ def retainer_subtask_page():
                     
                     # Display designer suggestion if available
                     if "selected_designer" in st.session_state:
-                        st.info(f"Suggested Designer: {st.session_state.selected_designer}")
+                        create_notification(f"Suggested Designer: {st.session_state.selected_designer}", "info")
                     
                     # Success message and transition
-                    st.success("Tasks created successfully! Proceeding to designer selection...")
+                    create_notification("Tasks created successfully! Proceeding to designer selection...", "success")
                     
                     st.rerun()
             
             except Exception as e:
-                st.error(f"An error occurred: {str(e)}")
+                create_notification(f"An error occurred: {str(e)}", "error")
                 logger.error(f"Error in retainer task creation: {e}", exc_info=True)
 def inspect_field_values(models, uid, field_name, model_name='project.task', limit=50):
     """
@@ -2262,7 +2671,7 @@ def debug_task_fields():
     models = st.session_state.odoo_models
     
     if not uid or not models:
-        st.error("Not connected to Odoo. Please log in first.")
+        create_notification("Not connected to Odoo. Please log in first.", "error")
         return
     
     # Add a field inspection section
@@ -2318,7 +2727,7 @@ def debug_task_fields():
                 )
                 
                 if model_records:
-                    st.success(f"Found {len(model_records)} models matching '{model_prefix}'")
+                    create_notification(f"Found {len(model_records)} models matching '{model_prefix}'", "success")
                     
                     # Display in a table
                     model_data = []
@@ -2331,9 +2740,9 @@ def debug_task_fields():
                     
                     st.table(pd.DataFrame(model_data))
                 else:
-                    st.warning(f"No models found matching '{model_prefix}'")
+                    create_notification(f"No models found matching '{model_prefix}'", "warning")
             except Exception as e:
-                st.error(f"Error searching models: {str(e)}")
+                create_notification(f"Error searching models: {str(e)}", "error")
     # Import needed constants
     from helpers import ODOO_DB, ODOO_PASSWORD
     
@@ -2346,7 +2755,7 @@ def debug_task_fields():
                 {'attributes': ['string', 'type', 'required', 'relation']}
             )
         
-        st.success(f"Found {len(fields)} fields on project.task")
+        create_notification(f"Found {len(fields)} fields on project.task", "success")
         
         # Group fields by type for better display
         field_types = {}
@@ -2376,15 +2785,20 @@ def debug_task_fields():
                         st.markdown("---")
     
     except Exception as e:
-        st.error(f"Error fetching field information: {str(e)}")
+        create_notification(f"Error fetching field information: {str(e)}", "error")
         logger.error(f"Error in debug_task_fields: {e}", exc_info=True)
 
 def company_selection_page():
-    st.title("Select Company")
+    inject_enhanced_css()
+    create_animated_header("Select Company", "Choose your company to begin")  # Add subtitle
     
-    # Progress bar
-    st.progress(25, text="Step 1 of 4: Select Company")
 
+    # Progress bar
+    create_progress_steps(
+        current_step=1,
+        total_steps=4,
+        step_labels=["Company", "Sales Order", "Parent Task", "Subtasks"]
+    )
     # Connect to Odoo
     if "odoo_uid" not in st.session_state or "odoo_models" not in st.session_state:
         with st.spinner("Connecting to Odoo..."):
@@ -2393,7 +2807,7 @@ def company_selection_page():
                 st.session_state.odoo_uid = uid
                 st.session_state.odoo_models = models
             else:
-                st.error("Failed to connect to Odoo. Please check your credentials.")
+                create_notification("Failed to connect to Odoo. Please check your credentials.", "error")
                 return
     else:
         uid = st.session_state.odoo_uid
@@ -2406,10 +2820,11 @@ def company_selection_page():
             if companies:
                 st.session_state.companies = companies
             else:
-                st.warning("No companies found or error fetching companies.")
+                create_notification("No companies found or error fetching companies.", "warning")
                 st.session_state.companies = []
 
     # Create form for company selection
+    style_form_container()
     with st.form("company_selection_form"):
         st.subheader("Select Company")
         
@@ -2424,22 +2839,27 @@ def company_selection_page():
         if submit:
             # Validate selection
             if not selected_company:
-                st.error("Please select a company.")
+                create_notification("Please select a company.", "error")
                 return
                 
             # Save to session state
             st.session_state.selected_company = selected_company
             st.session_state.company_selection_done = True
             
-            st.success(f"Selected company: {selected_company}")
+            create_notification(f"Selected company: {selected_company}", "success")
             st.rerun()
 
 def email_analysis_page():
-    st.title("Email Analysis")
+    inject_enhanced_css()    
+    create_animated_header("Email Analysis", "Extract information from recent emails")
     
     # Progress bar
-    st.progress(66, text="Step 3 of 5: Email Analysis")
-    
+    create_progress_steps(
+        current_step=3,
+        total_steps=5,
+        step_labels=["Company", "Sales Order", "Email Analysis", "Parent Task", "Subtasks"]
+    )
+        
     # Navigation
     cols = st.columns([1, 5])
     with cols[0]:
@@ -2447,14 +2867,14 @@ def email_analysis_page():
             st.session_state["back_requested"] = True
             st.rerun()
 
+    # Get variables first (these are used in the form below)
+    selected_company = st.session_state.get("selected_company", "")
+    parent_sales_order_item = st.session_state.get("parent_sales_order_item", "")
+    customer = st.session_state.get("customer", "")
+    project = st.session_state.get("project", "")
+
     # Display current selection
-    with st.container(border=True):
-        selected_company = st.session_state.get("selected_company", "")
-        parent_sales_order_item = st.session_state.get("parent_sales_order_item", "")
-        customer = st.session_state.get("customer", "")
-        project = st.session_state.get("project", "")
-        
-        st.markdown("### Current Selection")
+    def display_current_selection():
         col1, col2, col3, col4 = st.columns(4)
         with col1:
             st.markdown(f"**Company:** {selected_company}")
@@ -2464,6 +2884,8 @@ def email_analysis_page():
             st.markdown(f"**Customer:** {customer}")
         with col4:
             st.markdown(f"**Project:** {project}")
+
+    create_glass_card(content=display_current_selection, title="Current Selection", icon="📋")
     
     # Suggested search terms OUTSIDE the form
     if parent_sales_order_item or customer:
@@ -2494,13 +2916,14 @@ def email_analysis_page():
     
     if not gmail_authenticated:
         # Authentication UI - completely outside of any form
-        st.info("### Google Authentication Required")
+        create_notification("### Google Authentication Required", "info")
         st.markdown("[Click here to authenticate with Google Gmail](https://prezlab-tms.streamlit.app/)")
-        st.warning("You need to authenticate with Gmail before analyzing emails")
+        create_notification("You need to authenticate with Gmail before analyzing emails", "warning")
         return  # Exit the function early - don't show any forms
     
     # Only proceed with email fetching if already authenticated
     # Email Analysis Options Form
+    style_form_container()
     with st.form("email_analysis_options"):
         st.subheader("Email Analysis Options")
         
@@ -2543,9 +2966,9 @@ def email_analysis_page():
                         st.session_state.show_threads = show_threads
                         st.rerun()  # Refresh to show results
                 else:
-                    st.error("Failed to connect to Gmail. Please check your credentials.")
+                    create_notification("Failed to connect to Gmail. Please check your credentials.", "error")
             except Exception as e:
-                st.error(f"Error connecting to Gmail: {str(e)}")
+                create_notification(f"Error connecting to Gmail: {str(e)}", "error")
     
     # Display emails or threads if fetched
     if "recent_emails" in st.session_state:
@@ -2555,7 +2978,7 @@ def email_analysis_page():
             thread_count = len(threads)
             
             if thread_count > 0:
-                st.success(f"Found {thread_count} email threads")
+                create_notification(f"Found {thread_count} email threads", "success")
                 
                 # Create a searchable dropdown
                 thread_options = []
@@ -2616,6 +3039,7 @@ def email_analysis_page():
                             st.markdown("---")
                     
                     # Now create a form for analyzing - separate from thread selection
+                    style_form_container()
                     with st.form("analyze_thread_form"):
                         st.subheader("Analyze Selected Thread")
                         
@@ -2652,11 +3076,11 @@ def email_analysis_page():
                                 st.session_state.email_analysis_skipped = False
                                 st.rerun()
                         else:
-                            st.warning("Please select at least one email to analyze.")
+                            create_notification("Please select at least one email to analyze.", "warning")
                 else:
-                    st.warning("No threads match your search. Try different terms.")
+                    create_notification("No threads match your search. Try different terms.", "warning")
             else:
-                st.warning("No email threads found. Try different search terms.")
+                create_notification("No email threads found. Try different search terms.", "warning")
                 
                 # Button to try again - outside any form
                 if st.button("Try Different Search"):
@@ -2668,7 +3092,7 @@ def email_analysis_page():
         else:
             recent_emails = st.session_state.recent_emails
             if recent_emails:
-                st.success(f"Found {len(recent_emails)} emails")
+                create_notification(f"Found {len(recent_emails)} emails", "success")
                 
                 # Create searchable dropdown for individual emails
                 email_search = st.text_input("Search within found emails:", 
@@ -2727,9 +3151,9 @@ def email_analysis_page():
                             st.session_state.email_analysis_skipped = False
                             st.rerun()
                 else:
-                    st.warning("No emails match your search. Try different terms.")
+                    create_notification("No emails match your search. Try different terms.", "warning")
             else:
-                st.warning("No emails found. Try different search terms.")
+                create_notification("No emails found. Try different search terms.", "warning")
                 
                 # Button to try again - outside any form
                 if st.button("Try Different Search", key="try_diff_search_indiv"):
@@ -2740,16 +3164,16 @@ def email_analysis_page():
     if "email_analysis" in st.session_state and not st.session_state.get("email_analysis_skipped", True):
         analysis_results = st.session_state.email_analysis
         
-        with st.container(border=True):
-            st.subheader("Email Analysis Summary")
-            
+        def display_analysis_summary():
             if isinstance(analysis_results, dict):
                 for key, value in analysis_results.items():
                     if value and key != "error" and key != "raw_analysis":
                         st.markdown(f"**{key.replace('_', ' ').title()}:** {value}")
             else:
                 st.write(analysis_results)
-        
+
+        create_glass_card(content=display_analysis_summary, title="Email Analysis Summary", icon="📧")
+                
         # Continue button - outside any form
         if st.button("Continue to Parent Task Details", type="primary"):
             st.rerun()
@@ -2787,43 +3211,43 @@ def google_auth_page():
                     st.session_state.pop(key, None)
             st.rerun()
     
-    st.info("Please authenticate with Google to enable Gmail and Drive functionality.")
+    create_notification("Please authenticate with Google to enable Gmail and Drive functionality.", "info")
     
     col1, col2 = st.columns(2)
     
     with col1:
         st.subheader("Gmail")
         if gmail_authenticated or gmail_auth_complete:
-            st.success("✅ Authenticated")
+            create_notification("✅ Authenticated", "success")
         else:
-            st.warning("⚠️ Not authenticated")
+            create_notification("⚠️ Not authenticated", "warning")
             if st.button("Authenticate Gmail"):
                 with st.spinner("Connecting to Gmail..."):
                     gmail_service = get_gmail_service()
                     if gmail_service:
                         # Set both the credential and backup flags
                         st.session_state.gmail_auth_complete = True
-                        st.success("Gmail authentication successful!")
+                        create_notification("Gmail authentication successful!", "success")
                         st.rerun()
     
     with col2:
         st.subheader("Google Drive")
         if drive_authenticated or drive_auth_complete:
-            st.success("✅ Authenticated")
+            create_notification("✅ Authenticated", "success")
         else:
-            st.warning("⚠️ Not authenticated")
+            create_notification("⚠️ Not authenticated", "warning")
             if st.button("Authenticate Drive"):
                 with st.spinner("Connecting to Drive..."):
                     drive_service = get_drive_service()
                     if drive_service:
                         # Set both the credential and backup flags
                         st.session_state.drive_auth_complete = True
-                        st.success("Drive authentication successful!")
+                        create_notification("Drive authentication successful!", "success")
                         st.rerun()
     
     # Check if both services are authenticated
     if (gmail_authenticated or gmail_auth_complete) and (drive_authenticated or drive_auth_complete):
-        st.success("All services authenticated! You're ready to proceed.")
+        create_notification("All services authenticated! You're ready to proceed.", "success")
         
         # Set the main flag that the main() function checks
         st.session_state.google_auth_complete = True
@@ -2846,312 +3270,517 @@ def initialize_gmail_connection():
         if service:
             return service
         else:
-            st.error("Failed to initialize Gmail service. Check your credentials.")
+            create_notification("Failed to initialize Gmail service. Check your credentials.", "error")
             return None
     except Exception as e:
-        st.error(f"Error connecting to Gmail: {str(e)}")
+        create_notification(f"Error connecting to Gmail: {str(e)}", "error")
         return None
     
 def designer_selection_page():
     """
-    Page for selecting and booking designers for created tasks.
-    Displayed after task creation in both ad-hoc and retainer flows.
+    Enhanced Designer Selection & Booking page with modern UI
     """
-    st.title("Designer Selection & Booking")
-
-    # Check if we have tasks to assign designers to
+    inject_enhanced_css()
+    
+    # Add custom CSS for designer cards
+    designer_css = f"""
+    <style>
+    .designer-card {{
+        background: white;
+        border-radius: 16px;
+        padding: 1.5rem;
+        margin: 1rem 0;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+        transition: all 0.3s ease;
+        cursor: pointer;
+        position: relative;
+        overflow: hidden;
+    }}
+    
+    .designer-card:hover {{
+        transform: translateY(-5px);
+        box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
+    }}
+    
+    .designer-card.selected {{
+        border: 2px solid {COLORS['primary_purple']};
+        background: linear-gradient(to right, {COLORS['primary_purple']}05, transparent);
+    }}
+    
+    .designer-avatar {{
+        width: 60px;
+        height: 60px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, {COLORS['primary_purple']}, {COLORS['coral']});
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-size: 1.5rem;
+        font-weight: 700;
+        box-shadow: 0 4px 15px rgba(128, 90, 249, 0.3);
+    }}
+    
+    .match-indicator {{
+        position: absolute;
+        top: 1rem;
+        right: 1rem;
+        width: 60px;
+        height: 60px;
+        border-radius: 50%;
+        background: white;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 700;
+        font-size: 1.2rem;
+    }}
+    
+    .skills-tag {{
+        display: inline-block;
+        padding: 0.25rem 0.75rem;
+        background: {COLORS['light_purple']};
+        color: {COLORS['primary_purple']};
+        border-radius: 20px;
+        font-size: 0.875rem;
+        margin: 0.25rem;
+    }}
+    
+    .task-preview {{
+        background: linear-gradient(135deg, {COLORS['light_purple']}, {COLORS['light_gray']});
+        border-radius: 12px;
+        padding: 1rem;
+        margin: 0.5rem 0;
+        border-left: 4px solid {COLORS['primary_purple']};
+    }}
+    
+    @keyframes bounce {{
+        0%, 100% {{ transform: translateY(0); }}
+        50% {{ transform: translateY(-20px); }}
+    }}
+    
+    @keyframes scaleIn {{
+        0% {{ transform: scale(0); opacity: 0; }}
+        100% {{ transform: scale(1); opacity: 1; }}
+    }}
+    
+    .success-animation {{
+        animation: bounce 1s infinite;
+    }}
+    </style>
+    """
+    st.markdown(designer_css, unsafe_allow_html=True)
+    
+    create_animated_header("Designer Selection & Booking", "AI-Powered Designer Matching")
+    
+    # Check if we have tasks
     if "created_tasks" not in st.session_state or not st.session_state.created_tasks:
-        st.warning("No tasks available for designer assignment. Please create tasks first.")
-        # Clear the designer_selection flag to prevent coming back here
-        if "designer_selection" in st.session_state:
-            st.session_state.pop("designer_selection", None)
-            
-        if st.button("Return to Home"):
-            for key in ["form_type", "adhoc_sales_order_done", "adhoc_parent_input_done", 
-                      "retainer_parent_input_done", "subtask_index", "created_tasks", 
-                      "company_selection_done", "email_analysis_done", "email_analysis_skipped"]:
+        create_notification("No tasks available for designer assignment.", "warning")
+        if st.button("Return to Home", type="primary"):
+            for key in ["form_type", "company_selection_done", "designer_selection", 
+                      "created_tasks", "parent_task_id"]:
                 st.session_state.pop(key, None)
             st.rerun()
         return
     
-    # Get Odoo connection
+    # Get connection
     uid = st.session_state.odoo_uid
     models = st.session_state.odoo_models
     
-    # Display created tasks
-    st.subheader("Tasks Ready for Designer Assignment")
+    # Get Odoo credentials for constants
+    odoo_credentials = st.session_state.get('odoo_credentials', {})
+    ODOO_DB = odoo_credentials.get('db')
+    ODOO_PASSWORD = odoo_credentials.get('password')
     
-    tasks = st.session_state.created_tasks
-    parent_task_id = st.session_state.get("parent_task_id")
-    
-    # Display parent task info if available
-    if parent_task_id:
-        try:
-            # Fetch parent task details
-            parent_task_data = models.execute_kw(
-                ODOO_DB, uid, ODOO_PASSWORD,
-                'project.task', 'read',
-                [[parent_task_id]],
-                {'fields': ['name', 'x_studio_service_category_1', 'x_studio_service_category_2', 'description']}
-            )
-            
-            if parent_task_data:
-                parent_info = parent_task_data[0]
-                with st.container(border=True):
-                    st.markdown(f"**Parent Task:** {parent_info.get('name', f'ID: {parent_task_id}')}")
-                    st.markdown(f"**Parent Task ID:** {parent_task_id}")
-                    st.markdown(f"**Project:** {st.session_state.get('project', '')}")
-                    st.markdown(f"**Customer:** {st.session_state.get('customer', '')}")
-                    
-                    # Service categories if available
-                    if 'x_studio_service_category_1' in parent_info and parent_info['x_studio_service_category_1']:
-                        if isinstance(parent_info['x_studio_service_category_1'], list):
-                            st.markdown(f"**Service Category 1:** {parent_info['x_studio_service_category_1'][1]}")
-                        else:
-                            st.markdown(f"**Service Category 1:** {parent_info['x_studio_service_category_1']}")
-                    
-                    # Add Drive folder link if available
-                    if "drive_folder_link" in st.session_state:
-                        st.markdown(f"**📁 Google Drive Folder:** [Open Folder]({st.session_state.drive_folder_link})")
-        except Exception as e:
-            logger.warning(f"Could not fetch parent task details: {e}")
-            with st.container(border=True):
-                st.markdown(f"**Parent Task ID:** {parent_task_id}")
-                st.markdown(f"**Project:** {st.session_state.get('project', '')}")
-                st.markdown(f"**Customer:** {st.session_state.get('customer', '')}")
-                if "drive_folder_link" in st.session_state:
-                    st.markdown(f"**📁 Google Drive Folder:** [Open Folder]({st.session_state.drive_folder_link})")
-
-    # Load all designers once
+    # Load designers and employees
     with st.spinner("Loading designer information..."):
         try:
             designers_df = load_designers()
             if designers_df.empty:
-                st.error("No designer information available. Please check the designer data file.")
+                create_notification("No designer information available.", "error")
                 return
-            
-            # Get all employees from planning for availability check
             employees = get_all_employees_in_planning(models, uid)
         except Exception as e:
-            st.error(f"Error loading designers: {str(e)}")
+            create_notification(f"Error loading designers: {str(e)}", "error")
             logger.error(f"Error loading designers: {e}", exc_info=True)
             return
     
-    # Iterate through each task to assign designers
-    for i, task in enumerate(tasks):
-        st.markdown(f"### Task {i+1}: {task.get('name', f'Task ID: {task.get('id', 'Unknown')}')}")
+    # Parent task summary with enhanced design
+    if st.session_state.get("parent_task_id"):
+        parent_task_id = st.session_state.parent_task_id
         
-        # Get task details in a format suitable for designer matching
-        task_details = f"Task: {task.get('name', '')}\n"
-        task_details += f"Description: {task.get('description', '')}\n"
-        
-        # Add additional details if available
-        for field, label in [
-            ('x_studio_service_category_1', 'Service Category 1'),
-            ('x_studio_service_category_2', 'Service Category 2'),
-            ('x_studio_target_language', 'Target Language')
-        ]:
-            if field in task and task[field]:
-                if isinstance(task[field], list) and len(task[field]) >= 2:
-                    task_details += f"{label}: {task[field][1]}\n"
-                else:
-                    task_details += f"{label}: {task[field]}\n"
-        
-        # Add parent task information to task details for better matching
-        if parent_task_id:
-            task_details += f"Parent Task ID: {parent_task_id}\n"
-            task_details += f"Project: {st.session_state.get('project', '')}\n"
-            task_details += f"Customer: {st.session_state.get('customer', '')}\n"
-        
-        # Show current task status
-        current_status = "Not assigned"
-        if "designer_assigned" in task and task["designer_assigned"]:
-            current_status = f"Assigned to {task['designer_assigned']}"
-        
-        st.markdown(f"**Status:** {current_status}")
-        
-        # Designer suggestion and assignment section
-        with st.container(border=True):
-            col1, col2 = st.columns([2, 1])
-            
+        # Create parent task summary card
+        def display_parent_summary():
+            col1, col2, col3 = st.columns([2, 2, 1])
             with col1:
-                # Only suggest if not already assigned
-                if "designer_assigned" not in task or not task["designer_assigned"]:
-                    if st.button(f"Suggest Designers for Task {i+1}", key=f"suggest_{task['id']}"):
-                        with st.spinner("Analyzing best designers..."):
-                            # Calculate due date for availability check
-                            due_date = None
-                            if 'x_studio_client_due_date_3' in task and task['x_studio_client_due_date_3']:
-                                due_date = task['x_studio_client_due_date_3']
-                            elif 'date_deadline' in task and task['date_deadline']:
-                                due_date = task['date_deadline']
-                            else:
-                                due_date = datetime.now() + pd.Timedelta(days=7)  # Default 1 week
-                            
-                            # Estimate task duration based on service categories and design units
-                            estimated_duration = 8  # Default 8 hours
-                            
-                            # Try to refine duration estimate based on design units if available
-                            design_units_sc1 = task.get('x_studio_total_no_of_design_units_sc1', 0)
-                            design_units_sc2 = task.get('x_studio_total_no_of_design_units_sc2', 0)
-                            
-                            if design_units_sc1 or design_units_sc2:
-                                # Simple formula: 2 hours per design unit, minimum 4 hours
-                                total_units = (design_units_sc1 or 0) + (design_units_sc2 or 0)
-                                if total_units > 0:
-                                    estimated_duration = max(4, total_units * 2)
-                            
-                            # Get ranked designers
-                            ranked_designers = rank_designers_by_skill_match(task_details, designers_df)
-                            
-                            # Filter by availability
-                            available_designers, unavailable_designers = filter_designers_by_availability(
-                                ranked_designers, models, uid, due_date, estimated_duration
-                            )
-                            
-                            # Store in session state for this task
-                            task_key = f"designer_options_{task['id']}"
-                            st.session_state[task_key] = {
-                                'available': available_designers,
-                                'unavailable': unavailable_designers,
-                                'task_details': task_details,
-                                'due_date': due_date,
-                                'duration': estimated_duration
-                            }
-                            
-                            # Get the full suggestion with availability info
-                            suggestion = suggest_best_designer_available(
-                                task_details, available_designers, unavailable_designers
-                            )
-                            
-                            # Store the suggestion
-                            st.session_state[f"designer_suggestion_{task['id']}"] = suggestion
-                            
-                            # Refresh to show results
-                            st.rerun()
-            
+                parent_title = st.session_state.get('adhoc_parent_task_title') or st.session_state.get('retainer_parent_task_title', 'Parent Task')
+                st.markdown(f"### 📋 {parent_title}")
+                st.markdown(f"**ID:** {parent_task_id} | **Company:** {st.session_state.get('selected_company', '')}")
             with col2:
-                # Show scheduling button if not already assigned
-                if "designer_assigned" not in task or not task["designer_assigned"]:
-                    if st.button(f"Schedule Task {i+1}", key=f"schedule_{task['id']}"):
-                        # This will be handled below after displaying all options
-                        st.session_state[f"schedule_task_{task['id']}"] = True
-                        st.rerun()
+                st.markdown(f"**Project:** {st.session_state.get('project', '')}")
+                st.markdown(f"**Customer:** {st.session_state.get('customer', '')}")
+            with col3:
+                if "drive_folder_link" in st.session_state:
+                    st.markdown(f"[📁 Open Drive Folder]({st.session_state.drive_folder_link})")
         
-        # Display designer suggestions if available
-        designer_key = f"designer_options_{task['id']}"
-        suggestion_key = f"designer_suggestion_{task['id']}"
+        create_glass_card(content=display_parent_summary, title="Project Overview", icon="🎯")
+    
+    # Task Progress Overview
+    tasks = st.session_state.created_tasks
+    total_tasks = len(tasks)
+    assigned_tasks = sum(1 for task in tasks if task.get("designer_assigned"))
+    
+    # Progress metrics
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        create_metric_card("Total Tasks", str(int(total_tasks)), icon="📊")
+    with col2:
+        create_metric_card("Assigned", str(int(assigned_tasks)), icon="✅")
+    with col3:
+        remaining = int(total_tasks) - int(assigned_tasks)
+        create_metric_card("Remaining", str(remaining), icon="⏳")
+    
+    # Progress bar
+    progress = (assigned_tasks / total_tasks) * 100 if total_tasks > 0 else 0
+    progress_html = f"""
+    <div style="margin: 2rem 0;">
+        <div style="width: 100%; background-color: {COLORS['light_gray']}; 
+                    border-radius: 10px; overflow: hidden;">
+            <div style="width: {progress}%; background: linear-gradient(90deg, 
+                       {COLORS['primary_purple']}, {COLORS['coral']}); 
+                       height: 10px; transition: width 0.5s ease;">
+            </div>
+        </div>
+        <p style="text-align: center; margin-top: 0.5rem; color: {COLORS['dark_gray']};">
+            {progress:.0f}% Complete
+        </p>
+    </div>
+    """
+    st.markdown(progress_html, unsafe_allow_html=True)
+    
+    # Process each task
+    for i, task in enumerate(tasks):
+        # Task section with enhanced design
+        task_name = task.get('name', f'Task ID: {task.get("id", "Unknown")}')
+        task_id = task.get('id')
         
-        if suggestion_key in st.session_state:
-            st.markdown("#### Designer Recommendation")
-            st.info(st.session_state[suggestion_key])
+        # Task header with status
+        if task.get("designer_assigned"):
+            status_html = f"""
+            <div style="display: flex; justify-content: space-between; align-items: center; 
+                        margin-bottom: 1rem;">
+                <h3 style="margin: 0; color: {COLORS['navy']};">Task {i+1}: {task_name}</h3>
+                <span class="status-pill status-completed" style="
+                    background: {COLORS['success']}20;
+                    color: {COLORS['success']};
+                    padding: 0.5rem 1rem;
+                    border-radius: 50px;
+                    font-weight: 600;
+                ">
+                    ✅ Assigned to {task['designer_assigned']}
+                </span>
+            </div>
+            """
+        else:
+            status_html = f"""
+            <div style="display: flex; justify-content: space-between; align-items: center; 
+                        margin-bottom: 1rem;">
+                <h3 style="margin: 0; color: {COLORS['navy']};">Task {i+1}: {task_name}</h3>
+                <span class="status-pill status-pending" style="
+                    background: {COLORS['warning']}20;
+                    color: {COLORS['warning']};
+                    padding: 0.5rem 1rem;
+                    border-radius: 50px;
+                    font-weight: 600;
+                ">
+                    ⏳ Pending Assignment
+                </span>
+            </div>
+            """
+        st.markdown(status_html, unsafe_allow_html=True)
         
-        # Display designer selection options if available
-        if designer_key in st.session_state:
-            options = st.session_state[designer_key]
+        # Task details preview
+        with st.container():
+            # Get service category names
+            service_cat_1 = "Not specified"
+            if task.get('x_studio_service_category_1'):
+                if isinstance(task['x_studio_service_category_1'], list) and len(task['x_studio_service_category_1']) >= 2:
+                    service_cat_1 = task['x_studio_service_category_1'][1]
+                else:
+                    service_cat_1 = str(task['x_studio_service_category_1'])
             
-            available_df = options['available']
-            
-            if not available_df.empty:
-                st.markdown("#### Available Designers")
-                
-                # Display a selection widget for available designers
-                designer_options = []
-                for _, row in available_df.iterrows():
-                    name = row['Name']
-                    score = row.get('match_score', 0)
-                    avail = row.get('available_from', '')
-                    
-                    if avail and isinstance(avail, pd.Timestamp):
-                        avail_str = avail.strftime("%Y-%m-%d %H:%M")
-                    else:
-                        avail_str = "Unknown"
+            task_preview_html = f"""
+            <div class="task-preview">
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem;">
+                    <div>
+                        <strong>Service Category:</strong><br>
+                        {service_cat_1}
+                    </div>
+                    <div>
+                        <strong>Target Language:</strong><br>
+                        {task.get('x_studio_target_language', 'Not specified')}
+                    </div>
+                    <div>
+                        <strong>Due Date:</strong><br>
+                        {task.get('x_studio_client_due_date_3', 'Not set')}
+                    </div>
+                </div>
+            </div>
+            """
+            st.markdown(task_preview_html, unsafe_allow_html=True)
+        
+        # Only show designer selection if not assigned
+        if not task.get("designer_assigned"):
+            # Action buttons
+            col1 = st.container()
+            with col1:
+                if st.button(f"🤖 Find Best Designers", key=f"suggest_{task_id}", use_container_width=True, type="primary"):
+                    with st.spinner("AI analyzing designer skills..."):
+                        # Get task details for matching
+                        task_details = f"""
+                        Task: {task_name}
+                        Service Category: {service_cat_1}
+                        Target Language: {task.get('x_studio_target_language', '')}
+                        Project: {st.session_state.get('project', '')}
+                        Customer: {st.session_state.get('customer', '')}
+                        Description: {task.get('description', '')}
+                        """
                         
-                    option_text = f"{name} (Match: {score:.0f}%, Available: {avail_str})"
-                    designer_options.append((name, option_text))
+                        # Calculate due date and duration
+                        due_date = None
+                        if 'x_studio_client_due_date_3' in task and task['x_studio_client_due_date_3']:
+                            try:
+                                if isinstance(task['x_studio_client_due_date_3'], str):
+                                    due_date = pd.to_datetime(task['x_studio_client_due_date_3'])
+                                else:
+                                    due_date = task['x_studio_client_due_date_3']
+                            except:
+                                due_date = datetime.now() + pd.Timedelta(days=7)
+                        else:
+                            due_date = datetime.now() + pd.Timedelta(days=7)
+                            
+                        # Estimate task duration based on design units
+                        estimated_duration = 8  # Default hours
+                        design_units_sc1 = task.get('x_studio_total_no_of_design_units_sc1', 0) or 0
+                        design_units_sc2 = task.get('x_studio_total_no_of_design_units_sc2', 0) or 0
+                        total_units = design_units_sc1 + design_units_sc2
+                        if total_units > 0:
+                            estimated_duration = max(4, total_units * 2)
+                        
+                        # Get ranked designers
+                        ranked_designers = rank_designers_by_skill_match(task_details, designers_df)
+                        
+                        # Filter by availability
+                        available_designers, unavailable_designers = filter_designers_by_availability(
+                            ranked_designers, models, uid, due_date, estimated_duration
+                        )
+                        
+                        # Store results
+                        task_key = f"designer_options_{task_id}"
+                        st.session_state[task_key] = {
+                            'available': available_designers,
+                            'unavailable': unavailable_designers,
+                            'task_details': task_details,
+                            'due_date': due_date,
+                            'duration': estimated_duration
+                        }
+                        st.rerun()
+            
+            # Display designer options if available
+            designer_key = f"designer_options_{task_id}"
+            if designer_key in st.session_state:
+                options = st.session_state[designer_key]
+                available_df = options['available']
+                unavailable_df = options['unavailable']
                 
-                # Selectbox for designer selection
-                if designer_options:
-                    selected_option = st.selectbox(
-                        "Select Designer:",
-                        options=range(len(designer_options)),
-                        format_func=lambda i: designer_options[i][1],
-                        key=f"designer_select_{task['id']}"
-                    )
+                # Replace the designer cards section in designer_selection_page()
+
+                if not available_df.empty:
+                    st.markdown("### 🎯 Recommended Designers")
                     
-                    # Store the selected designer name
-                    selected_designer = designer_options[selected_option][0]
-                    st.session_state[f"selected_designer_{task['id']}"] = selected_designer
-            else:
-                st.warning("No designers are currently available for this task.")
+                    # Show top 5 available designers
+                    for idx, designer in available_df.head(5).iterrows():
+                        # Get designer details
+                        name = designer['Name']
+                        score = designer.get('match_score', 0)
+                        position = designer.get('Position', 'Designer')
+                        tools = designer.get('Tools', '')
+                        languages = designer.get('Languages', '')
+                        
+                        # Availability info
+                        avail_from = designer.get('available_from', '')
+                        if avail_from and isinstance(avail_from, pd.Timestamp):
+                            avail_str = avail_from.strftime("%b %d, %H:%M")
+                        else:
+                            avail_str = "Available Now"
+                        
+                        # Create designer card using columns
+                        with st.container():
+                            # Card container with custom styling
+                            card_col1, card_col2, card_col3 = st.columns([1, 4, 1])
+                            
+                            with card_col1:
+                                # Avatar
+                                st.markdown(
+                                    f"""
+                                    <div style="
+                                        width: 60px;
+                                        height: 60px;
+                                        border-radius: 50%;
+                                        background: linear-gradient(135deg, {COLORS['primary_purple']}, {COLORS['coral']});
+                                        display: flex;
+                                        align-items: center;
+                                        justify-content: center;
+                                        color: white;
+                                        font-size: 1.5rem;
+                                        font-weight: 700;
+                                        box-shadow: 0 4px 15px rgba(128, 90, 249, 0.3);
+                                        margin: auto;
+                                    ">{name[0].upper()}</div>
+                                    """,
+                                    unsafe_allow_html=True
+                                )
+                            
+                            with card_col2:
+                                # Designer info
+                                st.markdown(f"**{name}**")
+                                st.caption(position)
+                                
+                                # Status badges
+                                col_a, col_b = st.columns(2)
+                                with col_a:
+                                    st.success(f"📅 {avail_str}")
+                                with col_b:
+                                    if languages:
+                                        st.info(f"🌐 {languages[:20]}{'...' if len(languages) > 20 else ''}")
+                                
+                                # Skills
+                                if tools:
+                                    tool_list = [t.strip() for t in tools.split(',')[:3] if t.strip()]
+                                    skills_html = " ".join([f'<span style="background: {COLORS["light_purple"]}; color: {COLORS["primary_purple"]}; padding: 0.25rem 0.75rem; border-radius: 20px; font-size: 0.875rem; margin: 0.25rem; display: inline-block;">{tool}</span>' for tool in tool_list])
+                                    st.markdown(skills_html, unsafe_allow_html=True)
+                            
+                            with card_col3:
+                                # Match score
+                                if score >= 80:
+                                    score_color = COLORS['success']
+                                elif score >= 60:
+                                    score_color = COLORS['warning']
+                                else:
+                                    score_color = COLORS['danger']
+                                
+                                st.markdown(
+                                    f"""
+                                    <div style="
+                                        width: 60px;
+                                        height: 60px;
+                                        border-radius: 50%;
+                                        background: white;
+                                        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+                                        display: flex;
+                                        align-items: center;
+                                        justify-content: center;
+                                        font-weight: 700;
+                                        font-size: 1.2rem;
+                                        color: {score_color};
+                                        margin: auto;
+                                    ">{score:.0f}%</div>
+                                    """,
+                                    unsafe_allow_html=True
+                                )
+                            
+                            # Select button
+                            if st.button(f"Select {name}", key=f"select_{task_id}_{idx}", 
+                                    use_container_width=True, type="primary"):
+                                st.session_state[f"selected_designer_{task_id}"] = name
+                                st.session_state[f"schedule_task_{task_id}"] = True
+                                st.rerun()
+                            
+                            # Add spacing between cards
+                            st.markdown("<br>", unsafe_allow_html=True)
+                else:
+                    create_notification("No designers available for this task's timeline.", "warning")
+                    
+                    # Show unavailable designers as alternatives
+                    if not unavailable_df.empty:
+                        st.markdown("### 🔍 Best Matches (Currently Unavailable)")
+                        for _, designer in unavailable_df.head(3).iterrows():
+                            st.markdown(f"**{designer['Name']}** - Match: {designer.get('match_score', 0):.0f}%")
         
-        # Handle scheduling if requested
+        st.markdown("---")
+    
+    # Final actions
+    if assigned_tasks == total_tasks:
+        # Success animation
+        success_html = f"""
+        <div style="text-align: center; margin: 2rem 0;">
+            <div style="font-size: 4rem;" class="success-animation">🎉</div>
+            <h2 style="color: {COLORS['primary_purple']};">All Tasks Assigned!</h2>
+            <p style="color: {COLORS['dark_gray']};">Great job! All tasks have been assigned to designers.</p>
+        </div>
+        """
+        st.markdown(success_html, unsafe_allow_html=True)
+        
+        if st.button("🏁 Complete Process", type="primary", use_container_width=True):
+            # Clear session state
+            keys_to_clear = [
+                "form_type", "adhoc_sales_order_done", "adhoc_parent_input_done",
+                "retainer_parent_input_done", "subtask_index", "created_tasks",
+                "designer_selection", "parent_task_id", "company_selection_done",
+                "email_analysis_done", "email_analysis_skipped"
+            ]
+            for key in keys_to_clear:
+                st.session_state.pop(key, None)
+            st.rerun()
+    else:
+        # Option to skip remaining assignments
+        if st.button("Complete Process (Skip Remaining)", use_container_width=True):
+            for key in ["form_type", "company_selection_done", "designer_selection", 
+                      "created_tasks", "parent_task_id"]:
+                st.session_state.pop(key, None)
+            st.rerun()
+    
+    # Handle scheduling in the background
+    for task in tasks:
         if f"schedule_task_{task['id']}" in st.session_state and st.session_state[f"schedule_task_{task['id']}"]:
             selected_designer_key = f"selected_designer_{task['id']}"
             
             if selected_designer_key in st.session_state:
                 designer_name = st.session_state[selected_designer_key]
                 
-                # Add debug logging to verify the correct designer name is being passed
-                st.write(f"Debug: Selected designer: {designer_name}")
-                
-                # Find employee ID with more robust matching
-                employee_id = None
-                for emp in employees:
-                    if designer_name.lower() in emp['name'].lower():
-                        employee_id = emp['id']
-                        st.write(f"Debug: Found employee ID: {employee_id} for {emp['name']}")
-                        break
-
-                # Try to find the available slot for this designer
+                # Get designer details
                 designer_key = f"designer_options_{task['id']}"
                 if designer_key in st.session_state:
                     options = st.session_state[designer_key]
                     available_df = options['available']
                     
-                    # Find the designer's row
                     designer_row = available_df[available_df['Name'] == designer_name]
-                    
                     if not designer_row.empty:
-                        # Get availability information
-                        available_from = designer_row.iloc[0].get('available_from')
-                        available_until = designer_row.iloc[0].get('available_until')
-                        
                         # Schedule the task
-                        with st.spinner(f"Scheduling task for {designer_name}..."):
+                        with st.spinner(f"Booking {designer_name} for the task..."):
                             # Find employee ID
                             employee_id = find_employee_id(designer_name, employees)
                             
                             if employee_id:
-                                # Get parent task name if available
-                                parent_info = ""
-                                if parent_task_id:
-                                    try:
-                                        parent_task_data = models.execute_kw(
-                                            ODOO_DB, uid, ODOO_PASSWORD,
-                                            'project.task', 'read',
-                                            [[parent_task_id]],
-                                            {'fields': ['name']}
-                                        )
-                                        if parent_task_data:
-                                            parent_name = parent_task_data[0].get('name', f"Parent {parent_task_id}")
-                                            parent_info = f" | Parent: {parent_name}"
-                                    except Exception as e:
-                                        logger.warning(f"Could not fetch parent task name: {e}")
-                                        parent_info = f" | Parent ID: {parent_task_id}"
+                                # Get availability
+                                available_from = designer_row.iloc[0].get('available_from')
+                                available_until = designer_row.iloc[0].get('available_until')
                                 
-                                # Get task name with project/customer context
+                                # Get task name with context
                                 task_name = task.get('name', f"Task {task['id']}")
                                 project_name = st.session_state.get('project', '')
                                 customer_name = st.session_state.get('customer', '')
                                 
-                                planning_task_name = f"{task_name}{parent_info}"
+                                planning_task_name = f"{task_name}"
+                                if parent_task_id:
+                                    planning_task_name += f" | Parent ID: {parent_task_id}"
                                 if project_name:
-                                    planning_task_name += f" | Project: {project_name}"
+                                    planning_task_name += f" | {project_name}"
                                 if customer_name:
-                                    planning_task_name += f" | Customer: {customer_name}"
+                                    planning_task_name += f" | {customer_name}"
                                 
-                                # Convert to datetime if needed
+                                # Convert timestamps
                                 task_start = available_from
                                 task_end = available_until
                                 
@@ -3160,12 +3789,7 @@ def designer_selection_page():
                                 if isinstance(task_end, pd.Timestamp):
                                     task_end = task_end.to_pydatetime()
                                 
-
-                                # Add before creating the planning slot
-                                planning_fields = get_available_fields(models, uid, 'planning.slot')
-                                st.write("Available planning.slot fields:", list(planning_fields.keys()))
-
-                                # Create the planning slot with full context
+                                # Create planning slot
                                 slot_id = create_task(
                                     models, uid, employee_id, 
                                     planning_task_name, 
@@ -3175,86 +3799,43 @@ def designer_selection_page():
                                 )
                                 
                                 if slot_id:
-                                    # Update the task with the assigned designer
-                                    with st.spinner(f"Updating task with designer {designer_name}..."):
-                                        # Create a more descriptive assignment note
-                                        assignment_note = (
-                                            f"Designer {designer_name} assigned by Task Management System\n"
-                                            f"Assignment Date: {datetime.now().strftime('%Y-%m-%d %H:%M')}\n"
-                                            f"Scheduled Time: {task_start.strftime('%Y-%m-%d %H:%M')} to {task_end.strftime('%Y-%m-%d %H:%M')}\n"
-                                            f"Planning Slot ID: {slot_id}"
-                                        )
-                                        
-                                        success = update_task_designer(models, uid, task['id'], designer_name, 
-                                                                      assignment_note=assignment_note, 
-                                                                      planning_slot_id=slot_id,
-                                                                      role="Designer")
-                                        
-                                        if success:
-                                            st.success(f"Successfully assigned {designer_name} to the task!")
-                                            # Update task in session state
-                                            task["designer_assigned"] = designer_name
-                                            task["planning_slot_id"] = slot_id
-                                            # Clean up session state keys for this task
-                                            st.session_state.pop(f"schedule_task_{task['id']}", None)
-                                        else:
-                                            st.error(f"Failed to update task with designer information. Please check Odoo configuration and field names.")
-                                            # Provide troubleshooting information
-                                            with st.expander("Troubleshooting Information"):
-                                                st.markdown("The system failed to update the task with the designer information. This could be due to:")
-                                                st.markdown("1. Missing fields in the Odoo task model")
-                                                st.markdown("2. Insufficient permissions for the current Odoo user")
-                                                st.markdown("3. Network connectivity issues")
-                                                st.markdown("4. The designer may not have a corresponding user record in Odoo")
-                                                st.markdown("\nCheck the application logs for more detailed error information.")
+                                    # Update task with designer
+                                    assignment_note = (
+                                        f"\n\n--- Designer Assignment ---\n"
+                                        f"Designer: {designer_name}\n"
+                                        f"Assigned: {datetime.now().strftime('%Y-%m-%d %H:%M')}\n"
+                                        f"Scheduled: {task_start.strftime('%Y-%m-%d %H:%M')} to {task_end.strftime('%Y-%m-%d %H:%M')}\n"
+                                        f"Planning Slot ID: {slot_id}\n"
+                                        f"Match Score: {designer_row.iloc[0].get('match_score', 0):.0f}%"
+                                    )
+                                    
+                                    success = update_task_designer(
+                                        models, uid, task['id'], designer_name,
+                                        assignment_note=assignment_note,
+                                        planning_slot_id=slot_id,
+                                        role="Designer"
+                                    )
+                                    
+                                    if success:
+                                        create_notification(f"✅ Successfully assigned {designer_name} to the task!", "success")
+                                        task["designer_assigned"] = designer_name
+                                        task["planning_slot_id"] = slot_id
+                                    else:
+                                        create_notification(f"Task scheduled but couldn't update task details. Check Odoo.", "warning")
+                                    
+                                    # Clean up session state
+                                    st.session_state.pop(f"schedule_task_{task['id']}", None)
+                                    st.session_state.pop(f"selected_designer_{task['id']}", None)
+                                    st.rerun()
                                 else:
-                                    st.error(f"Failed to create planning slot for {designer_name}.")
+                                    create_notification(f"Failed to create planning slot for {designer_name}.", "error")
                             else:
-                                st.error(f"Could not find {designer_name} in the planning system.")
+                                create_notification(f"Could not find {designer_name} in the planning system.", "error")
                     else:
-                        st.error(f"Designer {designer_name} is no longer available.")
+                        create_notification(f"Designer {designer_name} is no longer available.", "error")
             else:
-                st.warning("Please select a designer first.")
+                create_notification("Please select a designer first.", "warning")
                 st.session_state.pop(f"schedule_task_{task['id']}", None)
-        
-        st.markdown("---")
-    
-    # Final success and navigation section
-    if all("designer_assigned" in task and task["designer_assigned"] for task in tasks):
-        st.success("All tasks have been assigned to designers!")
-        
-        if st.button("Complete Process", type="primary"):
-            # Clear ALL relevant session state keys
-            keys_to_clear = [
-                "form_type", 
-                "adhoc_sales_order_done", 
-                "adhoc_parent_input_done",
-                "retainer_parent_input_done", 
-                "subtask_index", 
-                "created_tasks",
-                "designer_selection",  # Make sure this flag is cleared
-                "parent_task_id",
-                "company_selection_done",
-                "email_analysis_done",
-                "email_analysis_skipped"
-            ]
-            
-            for key in keys_to_clear:
-                st.session_state.pop(key, None)
-            st.rerun()
-    else:
-        # If not all tasks are assigned, show appropriate message
-        assigned_count = sum(1 for task in tasks if "designer_assigned" in task and task["designer_assigned"])
-        st.info(f"{assigned_count} out of {len(tasks)} tasks have been assigned to designers.")
-        
-        if st.button("Complete Process (Skip Remaining Assignments)", type="primary"):
-            # Clear session state and return to home even if not all tasks are assigned
-            for key in ["form_type", "adhoc_sales_order_done", "adhoc_parent_input_done", 
-                      "retainer_parent_input_done", "subtask_index", "created_tasks",
-                      "designer_selection", "parent_task_id"]:
-                st.session_state.pop(key, None)
-            st.rerun()
-
 
 # -------------------------------
 # MAIN
@@ -3272,6 +3853,7 @@ def main():
     import streamlit as st
 
     inject_custom_css()
+    inject_enhanced_css()
 
 
     # Set logo position based on login status
@@ -3290,7 +3872,7 @@ def main():
         st.query_params.clear()               # keeps the URL tidy
 
     # ------------------------------------------------------------------
-    # 2)  Admin “system debug” shortcut (unchanged)
+    # 2)  Admin "system debug" shortcut (unchanged)
     # ------------------------------------------------------------------
     if inject_debug_page():                   # noqa: F821  (defined earlier in app.py)
         return
@@ -3321,13 +3903,13 @@ def main():
         code = st.session_state.pop("pending_oauth_code")
 
         from google_auth import handle_oauth_callback  # local import avoids circular refs
-        st.info("Finishing Google authentication…")
+        create_notification("Finishing Google authentication…", "info")
         success = handle_oauth_callback(code)
 
         if success:
-            st.success("Google account linked – token saved to Supabase.")
+            create_notification("Google account linked – token saved to Supabase.", "success")
         else:
-            st.error("Google authentication failed. Please try again.")
+            create_notification("Google authentication failed. Please try again.", "error")
 
         st.rerun()     # refresh state / UI regardless of outcome
         return
@@ -3359,7 +3941,9 @@ def main():
         login_page()
         return
     
-
+    if "login_in_progress" in st.session_state:
+        del st.session_state["login_in_progress"]
+        
     # Main content routing (identical to previous logic)
     if "form_type" not in st.session_state:
         type_selection_page()                 # noqa: F821

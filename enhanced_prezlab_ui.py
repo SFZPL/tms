@@ -42,7 +42,7 @@ def inject_enhanced_css():
     
     /* Global Styles */
     .stApp {{
-        font-family: 'Inter', sans-serif;
+        font-family: 'Inter', 'sans serif';
         background: linear-gradient(135deg, {COLORS['light_purple']} 0%, {COLORS['white']} 50%, {COLORS['light_gray']} 100%);
         background-attachment: fixed;
     }}
@@ -151,7 +151,7 @@ def inject_enhanced_css():
         border-radius: 12px;
         padding: 0.75rem 1rem;
         transition: all 0.3s ease;
-        font-family: 'Inter', sans-serif;
+        font-family: 'Inter', 'sans serif';
     }}
     
     .stTextInput > div > div > input:focus,
@@ -401,78 +401,82 @@ def create_animated_header(title, subtitle=None):
 
 def create_glass_card(content, title=None, icon=None):
     """Create a glassmorphism card with content"""
-    card_id = f"card_{hash(title or content)}"
-    
-    title_html = ""
-    if title:
-        icon_html = f'<span style="margin-right: 0.5rem;">{icon}</span>' if icon else ''
-        title_html = f"""
-        <h3 style="color: {COLORS['navy']}; margin-bottom: 1rem; display: flex; align-items: center;">
-            {icon_html}{title}
-        </h3>
+    # Create a container
+    with st.container():
+        # Add custom CSS class to this specific container
+        st.markdown(
+            f'<div class="glass-card-wrapper" style="padding: 1.5rem; margin: 1rem 0;">',
+            unsafe_allow_html=True
+        )
+        
+        # Add title if provided
+        if title:
+            if icon:
+                st.markdown(f"### {icon} {title}")
+            else:
+                st.markdown(f"### {title}")
+        
+        # Execute the content
+        if callable(content):
+            content()
+        else:
+            st.write(content)
+        
+        # Close the wrapper
+        st.markdown('</div>', unsafe_allow_html=True)
+def show_loading_with_progress(message, current_step=None, total_steps=None):
+    """Show loading animation with optional progress"""
+    if current_step and total_steps:
+        progress = (current_step / total_steps) * 100
+        progress_html = f"""
+        <div style="text-align: center; padding: 2rem;">
+            <div class="loader"></div>
+            <p style="color: {COLORS['dark_gray']}; margin-top: 1rem;">{message}</p>
+            <div style="margin-top: 1rem;">
+                <div style="background: #e0e0e0; border-radius: 10px; overflow: hidden;">
+                    <div style="background: {COLORS['primary_purple']}; width: {progress}%; height: 6px;"></div>
+                </div>
+                <p style="color: {COLORS['dark_gray']}; font-size: 0.875rem; margin-top: 0.5rem;">
+                    Step {current_step} of {total_steps}
+                </p>
+            </div>
+        </div>
         """
-    
-    card_html = f"""
-    <div class="glass-card" id="{card_id}">
-        {title_html}
-        <div>{content}</div>
-    </div>
-    """
-    st.markdown(card_html, unsafe_allow_html=True)
+    else:
+        progress_html = f"""
+        <div style="text-align: center; padding: 2rem;">
+            <div class="loader"></div>
+            <p style="color: {COLORS['dark_gray']}; margin-top: 1rem;">{message}</p>
+        </div>
+        """
+    return st.markdown(progress_html, unsafe_allow_html=True)
 
 def create_progress_steps(current_step, total_steps, step_labels):
-    """Create an animated progress indicator"""
+    """Create a simple, clean progress indicator"""
     progress = (current_step / total_steps) * 100
     
-    steps_html = ""
-    for i in range(total_steps):
-        step_num = i + 1
-        is_active = step_num <= current_step
-        is_current = step_num == current_step
-        
-        step_class = "active" if is_active else ""
-        if is_current:
-            step_class += " current"
-        
-        steps_html += f"""
-        <div class="progress-step {step_class}" style="
-            flex: 1;
-            text-align: center;
-            position: relative;
-        ">
-            <div style="
-                width: 40px;
-                height: 40px;
-                border-radius: 50%;
-                background: {'linear-gradient(135deg, ' + COLORS['primary_purple'] + ', ' + COLORS['dark_purple'] + ')' if is_active else COLORS['light_gray']};
-                color: {'white' if is_active else COLORS['dark_gray']};
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                margin: 0 auto 0.5rem;
-                font-weight: 700;
-                transition: all 0.3s ease;
-                {('box-shadow: 0 4px 20px ' + COLORS['primary_purple'] + '40;' + 'transform: scale(1.2);') if is_current else ''}
-            ">{step_num}</div>
-            <div style="
-                font-size: 0.875rem;
-                color: {COLORS['navy'] if is_active else COLORS['dark_gray']};
-                font-weight: {600 if is_current else 400};
-            ">{step_labels[i]}</div>
-        </div>
-        """
-    
+    # Simple progress bar
     progress_html = f"""
-    <div style="margin: 2rem 0;">
-        <div class="progress-container">
-            <div class="progress-bar" style="width: {progress}%;"></div>
-        </div>
-        <div style="display: flex; justify-content: space-between; margin-top: 1rem;">
-            {steps_html}
-        </div>
+    <div style="width: 100%; background-color: #e0e0e0; border-radius: 10px; overflow: hidden; margin: 20px 0;">
+        <div style="width: {progress}%; background: linear-gradient(90deg, #805AF9, #FF6666); height: 10px;"></div>
     </div>
     """
     st.markdown(progress_html, unsafe_allow_html=True)
+    
+    # Step indicators using columns
+    cols = st.columns(total_steps)
+    for i, (col, label) in enumerate(zip(cols, step_labels)):
+        step_num = i + 1
+        is_complete = step_num < current_step
+        is_current = step_num == current_step
+        
+        with col:
+            if is_complete:
+                st.markdown(f"✅ **{label}**")
+            elif is_current:
+                st.markdown(f"🔵 **{label}**")
+            else:
+                st.markdown(f"⭕ {label}")
 
 def create_task_card(task_title, task_info, status="pending", assignee=None):
     """Create an interactive task card"""
@@ -553,6 +557,7 @@ def create_metric_card(label, value, delta=None, icon=None):
         {delta_html}
     </div>
     """
+    import streamlit as st
     st.markdown(card_html, unsafe_allow_html=True)
 
 def create_notification(message, type="info"):
@@ -598,6 +603,29 @@ def create_notification(message, type="info"):
     </div>
     """
     st.markdown(notification_html, unsafe_allow_html=True)
+
+def get_prezlab_logo_svg():
+    """Generate a PrezLab logo SVG"""
+    logo_svg = f"""
+    <svg width="120" height="120" viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
+        <rect width="120" height="120" rx="24" fill="url(#gradient)"/>
+        <defs>
+            <linearGradient id="gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" style="stop-color:{COLORS['primary_purple']};stop-opacity:1" />
+                <stop offset="100%" style="stop-color:{COLORS['dark_purple']};stop-opacity:1" />
+            </linearGradient>
+        </defs>
+        <text x="50%" y="50%" text-anchor="middle" dy=".3em" 
+              font-family="Inter, sans-serif" font-size="48" font-weight="700" fill="white">
+            P
+        </text>
+        <text x="50%" y="75%" text-anchor="middle" 
+              font-family="Inter, sans-serif" font-size="12" font-weight="500" fill="white">
+            PREZLAB
+        </text>
+    </svg>
+    """
+    return logo_svg
 
 def create_floating_action_button(icon="➕"):
     """Create a floating action button"""
