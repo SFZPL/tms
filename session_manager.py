@@ -203,6 +203,16 @@ class SessionManager:
         except Exception as e:
             logger.error(f"Error while persisting Google tokens: {e}", exc_info=True)
 
+        # ------------------------------------------------------------
+        # 4)  NEW —— Auto-authenticate Google services if credentials exist
+        # ------------------------------------------------------------
+        try:
+            from google_auth import auto_authenticate_google_services
+            if auto_authenticate_google_services():
+                logger.info(f"✅ Auto-authenticated Google services for {username}")
+        except Exception as e:
+            logger.error(f"Error auto-authenticating Google services: {e}")
+
     
     @staticmethod
     def logout(expired: bool = False):

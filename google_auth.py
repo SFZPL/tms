@@ -360,3 +360,123 @@ def handle_oauth_callback(code):
     except Exception as e:
         logger.error(f"Error handling OAuth callback: {e}", exc_info=True)
         return False
+    
+def auto_authenticate_google_services():
+    """
+    Automatically authenticate Google services if saved credentials exist.
+    Called after user login.
+    """
+    logger.info("Attempting auto-authentication for Google services")
+    
+    # Check if user is logged in and has username
+    if "user" not in st.session_state or not st.session_state.user:
+        logger.info("No user logged in, skipping auto-authentication")
+        return False
+    
+    username = st.session_state.user.get("username")
+    if not username:
+        logger.info("No username found, skipping auto-authentication")
+        return False
+    
+    try:
+        from token_storage import get_user_token
+        
+        # Track success
+        gmail_success = False
+        drive_success = False
+        
+        # Try to authenticate Gmail
+        gmail_token = get_user_token(username, "google_gmail")
+        if gmail_token:
+            try:
+                from google.oauth2.credentials import Credentials
+                creds = Credentials(
+                    token=gmail_token.get('token'),
+                    refresh_token=gmail_token.get('refresh_token'),
+                    token_uri=gmail_token.get('token_uri'),
+                    client_id=gmail_token.get('client_id'),
+                    client_secret=gmail_token.get('client_secret'),
+                    scopes=gmail_token.get('scopes')
+                )
+                
+                # Check if expired and refresh if needed
+                if hasattr(creds, 'expired') and creds.expired and hasattr(creds, 'refresh_token'):
+                    from google.auth.transport.requests import Request
+                    creds.refresh(Request())
+                    
+                    # Save refreshed token
+                    from token_storage import save_user_token
+                    creds_dict = {
+                        'token': creds.token,
+                        'refresh_token': creds.refresh_token,
+                        'token_uri': creds.token_uri,
+                        'client_id': creds.client_id,
+                        'client_secret': creds.client_secret,
+                        'scopes': creds.scopes
+                    }
+                    save_user_token(username, "google_gmail", creds_dict)
+                
+                # Store in session state
+                st.session_state["google_gmail_creds"] = creds
+                st.session_state["gmail_auth_complete"] = True
+                gmail_success = True
+                logger.info("Gmail auto-authentication successful")
+                
+            except Exception as e:
+                logger.error(f"Error auto-authenticating Gmail: {e}")
+        
+        # Try to authenticate Drive
+        drive_token = get_user_token(username, "google_drive")
+        if drive_token:
+            try:
+                from google.oauth2.credentials import Credentials
+                creds = Credentials(
+                    token=drive_token.get('token'),
+                    refresh_token=drive_token.get('refresh_token'),
+                    token_uri=drive_token.get('token_uri'),
+                    client_id=drive_token.get('client_id'),
+                    client_secret=drive_token.get('client_secret'),
+                    scopes=drive_token.get('scopes')
+                )
+                
+                # Check if expired and refresh if needed
+                if hasattr(creds, 'expired') and creds.expired and hasattr(creds, 'refresh_token'):
+                    from google.auth.transport.requests import Request
+                    creds.refresh(Request())
+                    
+                    # Save refreshed token
+                    from token_storage import save_user_token
+                    creds_dict = {
+                        'token': creds.token,
+                        'refresh_token': creds.refresh_token,
+                        'token_uri': creds.token_uri,
+                        'client_id': creds.client_id,
+                        'client_secret': creds.client_secret,
+                        'scopes': creds.scopes
+                    }
+                    save_user_token(username, "google_drive", creds_dict)
+                
+                # Store in session state
+                st.session_state["google_drive_creds"] = creds
+                st.session_state["drive_auth_complete"] = True
+                drive_success = True
+                logger.info("Drive auto-authentication successful")
+                
+            except Exception as e:
+                logger.error(f"Error auto-authenticating Drive: {e}")
+        
+        # Set overall auth complete if both services authenticated
+        if gmail_success and drive_success:
+            st.session_state["google_auth_complete"] = True
+            logger.info("Both Google services auto-authenticated successfully")
+            return True
+        elif gmail_success or drive_success:
+            logger.info(f"Partial auto-authentication: Gmail={gmail_success}, Drive={drive_success}")
+            return True
+        else:
+            logger.info("No saved credentials found for auto-authentication")
+            return False
+            
+    except Exception as e:
+        logger.error(f"Error in auto_authenticate_google_services: {e}")
+        return False

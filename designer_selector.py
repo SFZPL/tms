@@ -303,7 +303,55 @@ def filter_designers_by_availability(designers_df: pd.DataFrame, models, uid, de
                 available.append(row_copy)
             else:
                 logger.info(f"Designer not available: {name}")
-                not_available.append(row)
+                # Get information about why they're unavailable
+                row_copy = row.copy()
+                
+                # Find the task that's blocking them
+                blocking_task = None
+                for task in schedule:
+                    task_start = pd.to_datetime(task['start_datetime'])
+                    task_end = pd.to_datetime(task['end_datetime'])
+                    if task_start <= deadline and task_end >= deadline:
+                        blocking_task = task
+                        break
+                
+                if blocking_task:
+                    # Get task details from Odoo
+                    task_id = blocking_task.get('task_id')
+                    if task_id:
+                        task_details = models.execute_kw(
+                            st.session_state.odoo_credentials['db'], uid, st.session_state.odoo_credentials['password'],
+                            'project.task', 'read',
+                            [[task_id]],
+                            {'fields': ['name', 'x_studio_client_due_date_3', 'date_deadline']}
+                        )
+                        if task_details:
+                            task_details = task_details[0]
+                            row_copy['blocking_task_name'] = task_details.get('name', 'Unknown Task')
+                            # Try to get client due date first, fall back to internal deadline, then slot end_datetime
+                            row_copy['blocking_task_deadline'] = (
+                                task_details.get('x_studio_client_due_date_3') or 
+                                task_details.get('date_deadline') or 
+                                blocking_task.get('end_datetime')
+                            )
+                        else:
+                            row_copy['blocking_task_name'] = 'Unknown Task'
+                            row_copy['blocking_task_deadline'] = blocking_task.get('end_datetime')
+                    else:
+                        row_copy['blocking_task_name'] = 'Unknown Task'
+                        row_copy['blocking_task_deadline'] = blocking_task.get('end_datetime')
+                else:
+                    row_copy['blocking_task_name'] = 'Unknown Task'
+                    row_copy['blocking_task_deadline'] = None
+                
+                not_available.append(row_copy)
+        
+        # Ensure all unavailable designers have the required keys
+        for row in not_available:
+            if 'blocking_task_deadline' not in row:
+                row['blocking_task_deadline'] = None
+            if 'blocking_task_name' not in row:
+                row['blocking_task_name'] = 'Unknown Task'
         
         # Convert to DataFrames
         available_df = pd.DataFrame(available) if available else pd.DataFrame()
@@ -538,3 +586,51 @@ Designer Profiles (each line is: Name|Position|Tools|Outputs|Languages):
         logger.error(f"Error ranking designers: {e}", exc_info=True)
         # Return original DataFrame with empty scores on error
         return designers_df.assign(match_score=0.0, match_reason=f"Error: {str(e)}")
+
+def suggest_reshuffling(available_designers: pd.DataFrame, unavailable_designers: pd.DataFrame, 
+                       current_task_deadline: datetime, current_task_duration: int) -> Optional[Dict]:
+    """
+    Suggests task reshuffling if an unavailable designer is a better match.
+    
+    Args:
+        available_designers: DataFrame of available designers
+        unavailable_designers: DataFrame of unavailable designers
+        current_task_deadline: Deadline of the current task
+        current_task_duration: Duration of the current task in hours
+        
+    Returns:
+        Dictionary with reshuffling suggestion if applicable, None otherwise
+    """
+    if unavailable_designers.empty or available_designers.empty:
+        return None
+    
+    # Debug printout: show top unavailable designers, their scores, and blocking deadlines
+    debug_rows = unavailable_designers.head(5)
+    logger.info("Top unavailable designers for reshuffling consideration:")
+    for idx, row in debug_rows.iterrows():
+        logger.info(f"  Name: {row.get('Name')}, Match Score: {row.get('match_score')}, Blocking Task Deadline: {row.get('blocking_task_deadline')}")
+    
+    # Find the best available designer's match score
+    best_available_score = available_designers['match_score'].max() if 'match_score' in available_designers else 0
+    
+    # Find unavailable designers with better match scores
+    better_unavailable = unavailable_designers[
+        (unavailable_designers['match_score'] > best_available_score) & 
+        (unavailable_designers['blocking_task_deadline'] > current_task_deadline.strftime('%Y-%m-%d'))
+    ]
+    
+    if better_unavailable.empty:
+        return None
+    
+    # Get the best unavailable designer
+    best_unavailable = better_unavailable.iloc[0]
+    
+    return {
+        'designer_name': best_unavailable['Name'],
+        'match_score': best_unavailable['match_score'],
+        'blocking_task_name': best_unavailable.get('blocking_task_name', 'Unknown Task'),
+        'blocking_task_deadline': best_unavailable.get('blocking_task_deadline'),
+        'current_task_deadline': current_task_deadline.strftime('%Y-%m-%d'),
+        'current_task_duration': current_task_duration,
+        'best_available_score': best_available_score
+    }

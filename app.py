@@ -83,7 +83,8 @@ from designer_selector import (
     suggest_best_designer,
     suggest_best_designer_available,
     filter_designers_by_availability,
-    rank_designers_by_skill_match
+    rank_designers_by_skill_match,
+    suggest_reshuffling
 )
 
 from prezlab_ui import inject_custom_css, header, container, message, progress_steps, scribble, add_logo
@@ -493,32 +494,29 @@ def render_sidebar():
     # Navigation & Auth (only if logged in)
     if st.session_state.get("logged_in", False):
         # Navigation
+        # Navigation
         st.sidebar.subheader("Navigation")
         if st.sidebar.button("🏠 Home"):
+            # Clear all flow-related session state to return to type selection
             SessionManager.clear_flow_data()
-            st.rerun()
-
-        # Google Services
-        st.sidebar.subheader("Google Services")
-        gmail_ok = "google_gmail_creds" in st.session_state
-        drive_ok = "google_drive_creds" in st.session_state
-        status = "✅ Connected" if (gmail_ok and drive_ok) else "⚠️ Not connected"
-        if st.sidebar.button(f"Google Auth ({status})"):
-            st.session_state.show_google_auth = True
-            st.rerun()
-
-        # Odoo Connection
-        st.sidebar.subheader("Connection")
-        if st.sidebar.button("🔄 Reconnect to Odoo"):
-            with st.spinner("Reconnecting..."):
-                uid, models = get_odoo_connection(force_refresh=True)
-                if uid:
-                    st.sidebar.success("Reconnected successfully!")
-                else:
-                    st.sidebar.error("Failed to reconnect. Check logs.")
-                    
-        if st.sidebar.button("🚪 Logout"):
-            SessionManager.logout()
+            # Also clear these specific keys to ensure clean navigation
+            keys_to_clear = [
+                "form_type", 
+                "company_selection_done", 
+                "adhoc_sales_order_done",
+                "adhoc_parent_input_done", 
+                "retainer_parent_input_done",
+                "designer_selection",
+                "email_analysis_done",
+                "email_analysis_skipped",
+                "created_tasks",
+                "parent_task_id",
+                "subtask_index",
+                "adhoc_subtasks"
+            ]
+            for key in keys_to_clear:
+                if key in st.session_state:
+                    st.session_state.pop(key, None)
             st.rerun()
 
         # Admin Tools for 'admin' user
@@ -1329,6 +1327,8 @@ def sales_order_page():
 # -------------------------------
 # 3B) AD-HOC PARENT TASK PAGE (Ad-hoc Step 2)
 # -------------------------------
+# In app.py, replace the adhoc_parent_task_page() function with this updated version:
+
 def adhoc_parent_task_page():
     inject_enhanced_css()
     create_animated_header("Via Sales Order", "Parent Task Details")
@@ -1366,8 +1366,8 @@ def adhoc_parent_task_page():
     uid = st.session_state.odoo_uid
     models = st.session_state.odoo_models
 
-    # Get email analysis results if available
-    email_analysis = st.session_state.get("email_analysis", {})
+    # Use confirmed suggestions if available
+    email_analysis = st.session_state.get("email_analysis_confirmed") or st.session_state.get("email_analysis", {})
     email_analysis_skipped = st.session_state.get("email_analysis_skipped", True)
 
     # Form for parent task details
@@ -1377,48 +1377,99 @@ def adhoc_parent_task_page():
         
         # Basic Information
         with st.container():
-            # Use email analysis results as default values if available
+            # Use enhanced email analysis results
             default_title = ""
             if email_analysis and isinstance(email_analysis, dict) and not email_analysis_skipped:
-                services = email_analysis.get("services", "")
-                if services:
-                    default_title = f"Task for {services}"
+                # Use the AI-suggested parent task title
+                default_title = email_analysis.get("parent_task_title", "")
+                if not default_title:
+                    # Fallback to services-based title
+                    services = email_analysis.get("services", "")
+                    client = email_analysis.get("client", "")
+                    if services and client:
+                        default_title = f"{services} for {client}"
+                    elif services:
+                        default_title = f"Task for {services}"
             
             parent_task_title = st.text_input("Parent Task Title", 
                                              value=default_title,
-                                             help="Enter a descriptive title for the parent task")
+                                             help="AI-suggested title based on email analysis")
             
             col1, col2 = st.columns(2)
             with col1:
                 target_language_options = get_target_languages_odoo(models, uid)
-                # Default target language from email analysis
+                # Enhanced target language detection
                 default_target_lang_idx = 0
                 if email_analysis and isinstance(email_analysis, dict) and not email_analysis_skipped:
                     target_lang = email_analysis.get("target_language", "")
                     if target_lang and target_language_options:
+                        # Try exact match first
                         for i, lang in enumerate(target_language_options):
-                            if target_lang.lower() in lang.lower():
-                                default_target_lang_idx = i
+                            if target_lang.lower() == lang.lower():
+                                default_target_lang_idx = i + 1  # +1 because of empty option
                                 break
+                        # If no exact match, try partial match
+                        if default_target_lang_idx == 0:
+                            for i, lang in enumerate(target_language_options):
+                                if target_lang.lower() in lang.lower() or lang.lower() in target_lang.lower():
+                                    default_target_lang_idx = i + 1
+                                    break
                 
                 target_language_parent = st.selectbox(
                     "Target Language", 
                     [""] + target_language_options if target_language_options else [""],
-                    index=default_target_lang_idx if default_target_lang_idx else 0,
-                    help="Select the target language for this task"
+                    index=default_target_lang_idx,
+                    help="Auto-detected from email if available"
                 )
             with col2:
                 client_success_exec_options = get_client_success_executives_odoo(models, uid)
-                if client_success_exec_options:
+                
+                # Get logged-in user info
+                logged_in_email = st.session_state.get("user", {}).get("username", "")
+                logged_in_name = st.session_state.get("odoo_credentials", {}).get("name", "")
+                
+                # Find the logged-in user in the executives list
+                default_exec_index = 0
+                default_exec_value = None
+                
+                if client_success_exec_options and logged_in_email:
                     exec_options = [(None, "")] + [(user['id'], user['name']) for user in client_success_exec_options]
+                    
+                    # Try to find by email or name
+                    for i, (user_id, user_name) in enumerate(exec_options):
+                        if user_id is not None:  # Skip the empty option
+                            # Check if the name matches or if email is in the name
+                            if (user_name == logged_in_name or 
+                                logged_in_email.lower() in user_name.lower() or
+                                logged_in_name.lower() in user_name.lower()):
+                                default_exec_index = i
+                                default_exec_value = (user_id, user_name)
+                                break
+                    
+                    # If we found a match and this is the first time showing the form
+                    if default_exec_value and "adhoc_exec_set" not in st.session_state:
+                        st.session_state.adhoc_default_exec = default_exec_value
+                        st.session_state.adhoc_exec_set = True
+                    
+                    # Use stored default or found default
+                    if "adhoc_default_exec" in st.session_state:
+                        default_exec_value = st.session_state.adhoc_default_exec
+                        # Find its index
+                        for i, option in enumerate(exec_options):
+                            if option == default_exec_value:
+                                default_exec_index = i
+                                break
+                    
                     client_success_executive = st.selectbox(
                         "Client Success Executive", 
-                        options=exec_options, 
+                        options=exec_options,
+                        index=default_exec_index,
                         format_func=lambda x: x[1],
-                        help="Select the responsible client success executive"
+                        help="Automatically set to logged-in user"
                     )
                 else:
-                    client_success_executive = st.text_input("Client Success Executive")
+                    # Fallback to text input
+                    client_success_executive = st.text_input("Client Success Executive", value=logged_in_name)
         
         # Guidelines
         with st.expander("Guidelines", expanded=False):
@@ -1435,43 +1486,96 @@ def adhoc_parent_task_page():
             else:
                 create_notification("No guidelines found. This field is required.", "error")
                 guidelines_parent = None
-        # Dates
+                
+        # Dates section with AI suggestions
         st.subheader("Task Timeline")
         col1, col2, col3 = st.columns(3)
+        
+        # Calculate suggested dates based on email analysis
+        default_client_due = date.today() + pd.Timedelta(days=7)
+        default_internal_due = date.today() + pd.Timedelta(days=5)
+        
+        if email_analysis and isinstance(email_analysis, dict) and not email_analysis_skipped:
+            urgency = email_analysis.get("urgency", "medium").lower()
+            
+            # Adjust dates based on urgency
+            if urgency == "high":
+                default_client_due = date.today() + pd.Timedelta(days=3)
+                default_internal_due = date.today() + pd.Timedelta(days=2)
+            elif urgency == "low":
+                default_client_due = date.today() + pd.Timedelta(days=14)
+                default_internal_due = date.today() + pd.Timedelta(days=10)
+            
+            # Show urgency indicator
+            urgency_color = {"high": "🔴", "medium": "🟡", "low": "🟢"}.get(urgency, "🟡")
+            st.info(f"{urgency_color} Urgency: {urgency.capitalize()} (AI-detected)")
+        
         with col1:
             request_receipt_date = st.date_input("Request Receipt Date", value=date.today())
             request_receipt_time = st.time_input("Request Receipt Time", value=datetime.now().time())
         with col2:
-            client_due_date_parent = st.date_input("Client Due Date", value=date.today() + pd.Timedelta(days=7))
+            client_due_date_parent = st.date_input("Client Due Date", 
+                                                  value=default_client_due,
+                                                  help="AI-suggested based on email urgency")
         with col3:
-            internal_due_date = st.date_input("Internal Due Date", value=date.today() + pd.Timedelta(days=5))
+            internal_due_date = st.date_input("Internal Due Date", 
+                                             value=default_internal_due,
+                                             help="AI-suggested (2-3 days before client deadline)")
         
         # Combine date and time
         request_receipt_dt = datetime.combine(request_receipt_date, request_receipt_time)
         
-        # Description
+        # Enhanced description with email analysis
         st.subheader("Description")
         
-        # Use requirements from email analysis as starting point for description
+        # Build comprehensive description from email analysis
         default_description = ""
         if email_analysis and isinstance(email_analysis, dict) and not email_analysis_skipped:
+            # Start with requirements
             requirements = email_analysis.get("requirements", "")
             if requirements:
                 default_description = f"Requirements from client email:\n{requirements}"
-                
-                # Add other relevant information
-                services = email_analysis.get("services", "")
-                if services:
-                    default_description += f"\n\nRequested Services: {services}"
-                    
-                deadline = email_analysis.get("deadline", "")
-                if deadline:
-                    default_description += f"\n\nClient Requested Deadline: {deadline}"
+            
+            # Add services
+            services = email_analysis.get("services", "")
+            if services:
+                default_description += f"\n\nRequested Services:\n{services}"
+            
+            # Add deadline info
+            client_deadline = email_analysis.get("client_deadline", "")
+            if client_deadline:
+                default_description += f"\n\nClient Requested Deadline: {client_deadline}"
+            
+            # Add contact person
+            contact = email_analysis.get("contact_person", "")
+            if contact:
+                default_description += f"\n\nContact Person: {contact}"
+            
+            # Add any additional notes
+            notes = email_analysis.get("additional_notes", "")
+            if notes:
+                default_description += f"\n\nAdditional Notes:\n{notes}"
+            
+            # Add attachments mentioned
+            attachments = email_analysis.get("attachments_mentioned", "")
+            if attachments:
+                default_description += f"\n\nAttachments/References Mentioned: {attachments}"
         
         parent_description = st.text_area("Task Description", 
                                          value=default_description,
-                                         height=150, 
-                                         help="Enter any additional details for this task")
+                                         height=200, 
+                                         help="Auto-populated from email analysis")
+        
+        # Show AI-suggested subtasks if available
+        if email_analysis and isinstance(email_analysis, dict) and not email_analysis_skipped:
+            subtask_suggestions = email_analysis.get("subtask_suggestions", [])
+            if subtask_suggestions and len(subtask_suggestions) > 0:
+                with st.expander("📋 AI-Suggested Subtasks", expanded=True):
+                    st.write("The AI has suggested the following subtasks based on the email:")
+                    for i, suggestion in enumerate(subtask_suggestions, 1):
+                        st.write(f"{i}. {suggestion}")
+                    st.info("These suggestions will be used when creating subtasks in the next step.")
+                    
         # Submit button
         submit = st.form_submit_button("Next: Add Subtasks")
         
@@ -1510,6 +1614,8 @@ def adhoc_parent_task_page():
 # -------------------------------
 # 3C) AD-HOC SUBTASK PAGE (Ad-hoc Step 3)
 # -------------------------------
+# In app.py, replace the adhoc_subtask_page() function with this updated version:
+
 def adhoc_subtask_page():
     inject_enhanced_css()
     create_animated_header("Adhoc Subtask Page", "Create the subtasks")    
@@ -1565,13 +1671,17 @@ def adhoc_subtask_page():
         
         st.markdown(f"**Description:** {parent_data['parent_description']}")
 
-    # Rest of the function remains the same...
-    
     # Get current subtask index and sales order items list
     idx = st.session_state.get("subtask_index", 0)
     so_items = st.session_state.get("so_items", [])
     
-    # Display subtasks in progress
+    # Use confirmed suggestions if available
+    email_analysis = st.session_state.get("email_analysis_confirmed") or st.session_state.get("email_analysis", {})
+    email_analysis_skipped = st.session_state.get("email_analysis_skipped", True)
+    subtask_suggestions = []
+    if email_analysis and isinstance(email_analysis, dict) and not email_analysis_skipped:
+        subtask_suggestions = email_analysis.get("subtask_suggestions", [])
+    
     # Display subtasks in progress
     if st.session_state.adhoc_subtasks:
         def display_subtasks():
@@ -1640,15 +1750,6 @@ def adhoc_subtask_page():
         
         return
     
-    # Get email analysis results if available
-    email_analysis = st.session_state.get("email_analysis", {})
-    email_analysis_skipped = st.session_state.get("email_analysis_skipped", True)
-
-    # Current sales order line for this subtask
-    current_line = so_items[idx]
-    line_name = current_line.get("name", f"Line #{idx+1}")
-    
-    # Subtask form
     # Current sales order line for this subtask
     current_line = so_items[idx] if idx < len(so_items) else {}
     line_name = current_line.get("name", f"Line #{idx+1}") if current_line else f"Subtask #{idx+1}"
@@ -1658,56 +1759,115 @@ def adhoc_subtask_page():
     with st.form(f"subtask_form_{idx}"):
         st.subheader(f"Subtask for Sales Order Line: {line_name}")
         
-        # Default title from services in email analysis
+        # Smart default title using AI suggestions
         default_title = f"Subtask for {line_name}"
-        if email_analysis and isinstance(email_analysis, dict) and not email_analysis_skipped and idx == 0:  # Only use for first subtask
+        
+        # Use AI-suggested subtask name if available
+        if subtask_suggestions and idx < len(subtask_suggestions):
+            default_title = subtask_suggestions[idx]
+        elif email_analysis and isinstance(email_analysis, dict) and not email_analysis_skipped:
+            # Fallback: generate title based on service and line
             services = email_analysis.get("services", "")
-            if services:
-                default_title = f"Subtask: {services}"
+            if services and idx == 0:  # First subtask
+                default_title = f"Initial Planning - {services}"
+            elif services and idx == 1:  # Second subtask
+                default_title = f"Design/Development - {services}"
+            elif idx == len(so_items) - 1:  # Last subtask
+                default_title = f"Final Review and Delivery"
+            else:
+                default_title = f"{services} - Part {idx + 1}" if services else default_title
                 
         subtask_title = st.text_input("Subtask Title", value=default_title)
         
         col1, col2 = st.columns(2)
         with col1:
             service_category_1_options = get_service_category_1_options(models, uid)
+            
+            # Try to auto-select service category based on email analysis
+            default_sc1_idx = 0
+            if email_analysis and isinstance(email_analysis, dict) and not email_analysis_skipped:
+                suggested_sc1 = email_analysis.get("service_category_1", "")
+                if suggested_sc1 and service_category_1_options:
+                    # Try to find matching category
+                    for i, (cat_id, cat_name) in enumerate(service_category_1_options):
+                        if suggested_sc1.lower() in cat_name.lower() or cat_name.lower() in suggested_sc1.lower():
+                            default_sc1_idx = i + 1  # +1 for the None option
+                            break
+            
             if service_category_1_options:
                 # Add empty option as first choice
                 service_category_1 = st.selectbox(
                     "Service Category 1", 
                     options=[None] + service_category_1_options,
-                    format_func=lambda x: "" if x is None else (x[1] if isinstance(x, tuple) and len(x) > 1 else str(x))
+                    index=default_sc1_idx,
+                    format_func=lambda x: "" if x is None else (x[1] if isinstance(x, tuple) and len(x) > 1 else str(x)),
+                    help="Auto-selected based on email analysis" if default_sc1_idx > 0 else None
                 )
             else:
                 # Fallback to text input with warning
                 create_notification("No service categories found. Manual entry not recommended.", "warning")
                 service_category_1_text = st.text_input("Service Category 1 (manual)")
-                # Create a dummy tuple with -1 as ID to indicate this is not a valid ID
                 service_category_1 = (-1, service_category_1_text) if service_category_1_text else None
             
-            no_of_design_units_sc1 = st.number_input("Total No. of Design Units (SC1)", min_value=0, step=1)
+            # Auto-suggest design units based on email analysis
+            default_units_sc1 = 0
+            if email_analysis and isinstance(email_analysis, dict) and not email_analysis_skipped:
+                design_units = email_analysis.get("design_units", "")
+                if design_units:
+                    try:
+                        # Try to parse number from string
+                        import re
+                        numbers = re.findall(r'\d+', str(design_units))
+                        if numbers:
+                            default_units_sc1 = int(numbers[0])
+                    except:
+                        pass
+            
+            no_of_design_units_sc1 = st.number_input("Total No. of Design Units (SC1)", 
+                                                     min_value=0, 
+                                                     step=1, 
+                                                     value=default_units_sc1,
+                                                     help="Auto-estimated from email" if default_units_sc1 > 0 else None)
 
         with col2:
             service_category_2_options = get_service_category_2_options(models, uid)
+            
+            # Similar logic for service category 2
+            default_sc2_idx = 0
+            if email_analysis and isinstance(email_analysis, dict) and not email_analysis_skipped:
+                suggested_sc2 = email_analysis.get("service_category_2", "")
+                if suggested_sc2 and service_category_2_options:
+                    for i, (cat_id, cat_name) in enumerate(service_category_2_options):
+                        if suggested_sc2.lower() in cat_name.lower() or cat_name.lower() in suggested_sc2.lower():
+                            default_sc2_idx = i + 1
+                            break
+            
             if service_category_2_options:
-                # Add empty option as first choice
                 service_category_2 = st.selectbox(
                     "Service Category 2", 
                     options=[None] + service_category_2_options,
+                    index=default_sc2_idx,
                     format_func=lambda x: "" if x is None else (x[1] if isinstance(x, tuple) and len(x) > 1 else str(x))
                 )
             else:
-                # Fallback to text input with warning
-                create_notification("No service categories found. Manual entry not recommended.", "warning")
                 service_category_2_text = st.text_input("Service Category 2 (manual)")
-                # Create a dummy tuple with -1 as ID to indicate this is not a valid ID
                 service_category_2 = (-1, service_category_2_text) if service_category_2_text else None
             
             no_of_design_units_sc2 = st.number_input("Total No. of Design Units (SC2)", min_value=0, step=1)
-
         
-        client_due_date_subtask = st.date_input("Client Due Date (Subtask)", value=date.today() + pd.Timedelta(days=5))
+        # Auto-suggest due date based on urgency
+        default_subtask_due = date.today() + pd.Timedelta(days=5)
+        if email_analysis and isinstance(email_analysis, dict) and not email_analysis_skipped:
+            urgency = email_analysis.get("urgency", "medium").lower()
+            if urgency == "high":
+                default_subtask_due = date.today() + pd.Timedelta(days=2)
+            elif urgency == "low":
+                default_subtask_due = date.today() + pd.Timedelta(days=10)
         
-        # Submit options
+        client_due_date_subtask = st.date_input("Client Due Date (Subtask)", 
+                                               value=default_subtask_due,
+                                               help="Auto-adjusted based on email urgency")
+        
         # Submit options
         col1, col2 = st.columns(2)
         with col1:
@@ -1750,7 +1910,6 @@ def adhoc_subtask_page():
             else:
                 create_notification(f"Subtask saved: {subtask_title}", "success")
                 st.rerun()
-
 # -------------------------------
 # Finalize: Create Parent Task & Subtasks in Odoo
 # -------------------------------
@@ -2029,6 +2188,8 @@ def finalize_adhoc_subtasks():
 # -------------------------------
 # RETAINER FLOW
 # -------------------------------
+# In app.py, replace the retainer_parent_task_page() function with this updated version:
+
 def retainer_parent_task_page():
     inject_enhanced_css()
     create_animated_header("Retainer Parent Task Page", "Create the parent task")
@@ -2046,7 +2207,6 @@ def retainer_parent_task_page():
             st.session_state.returning_to_company = True
             st.rerun()
             
-    # Display selected company
     # Display selected company
     def display_company():
         st.markdown(f"**Selected Company:** {st.session_state.get('selected_company', '')}")
@@ -2112,11 +2272,53 @@ def retainer_parent_task_page():
         
         with col2:
             client_success_exec_options = get_client_success_executives_odoo(models, uid)
-            if client_success_exec_options:
+            
+            # Get logged-in user info
+            logged_in_email = st.session_state.get("user", {}).get("username", "")
+            logged_in_name = st.session_state.get("odoo_credentials", {}).get("name", "")
+            
+            # Find the logged-in user in the executives list
+            default_exec_index = 0
+            default_exec_value = None
+            
+            if client_success_exec_options and logged_in_email:
                 exec_options = [(None, "")] + [(user['id'], user['name']) for user in client_success_exec_options]
-                retainer_client_success_exec = st.selectbox("Client Success Executive", exec_options, format_func=lambda x: x[1])
+                
+                # Try to find by email or name
+                for i, (user_id, user_name) in enumerate(exec_options):
+                    if user_id is not None:  # Skip the empty option
+                        # Check if the name matches or if email is in the name
+                        if (user_name == logged_in_name or 
+                            logged_in_email.lower() in user_name.lower() or
+                            logged_in_name.lower() in user_name.lower()):
+                            default_exec_index = i
+                            default_exec_value = (user_id, user_name)
+                            break
+                
+                # If we found a match and this is the first time showing the form
+                if default_exec_value and "retainer_exec_set" not in st.session_state:
+                    st.session_state.retainer_default_exec = default_exec_value
+                    st.session_state.retainer_exec_set = True
+                
+                # Use stored default or found default
+                if "retainer_default_exec" in st.session_state:
+                    default_exec_value = st.session_state.retainer_default_exec
+                    # Find its index
+                    for i, option in enumerate(exec_options):
+                        if option == default_exec_value:
+                            default_exec_index = i
+                            break
+                
+                retainer_client_success_exec = st.selectbox(
+                    "Client Success Executive", 
+                    options=exec_options,
+                    index=default_exec_index,
+                    format_func=lambda x: x[1],
+                    help="Automatically set to logged-in user"
+                )
             else:
-                retainer_client_success_exec = st.text_input("Client Success Executive")
+                # Fallback to text input
+                retainer_client_success_exec = st.text_input("Client Success Executive", value=logged_in_name)
         
         # Guidelines
         with st.expander("Guidelines", expanded=False):
@@ -2184,7 +2386,7 @@ def retainer_parent_task_page():
             
             create_notification("Parent task details saved. Proceeding to subtask.", "success")
             st.rerun()
-
+            
 def retainer_subtask_page():
     inject_enhanced_css() 
     create_animated_header("Retainer Subtask Page", "Create the subtasks")
@@ -2861,10 +3063,15 @@ def email_analysis_page():
     )
         
     # Navigation
+    # Navigation
     cols = st.columns([1, 5])
     with cols[0]:
         if st.button("← Back"):
-            st.session_state["back_requested"] = True
+            # Go back to sales order page
+            st.session_state.pop("adhoc_sales_order_done", None)
+            st.session_state.pop("email_analysis_done", None)
+            st.session_state.pop("email_analysis_skipped", None)
+            st.session_state.pop("email_analysis", None)
             st.rerun()
 
     # Get variables first (these are used in the form below)
@@ -3144,10 +3351,69 @@ def email_analysis_page():
                         with st.spinner("Analyzing email with AI..."):
                             email_text = f"Subject: {selected_email.get('subject', '')}\n\nBody: {selected_email.get('body', '')}"
                             analysis_results = analyze_email(email_text)
-                            
+                            # If the result is in raw_analysis, parse it
+                            if "raw_analysis" in analysis_results:
+                                import json
+                                raw = analysis_results["raw_analysis"].strip()
+                                if raw.startswith("```json"):
+                                    raw = raw[7:]
+                                if raw.endswith("```"):
+                                    raw = raw[:-3]
+                                try:
+                                    parsed = json.loads(raw)
+                                    analysis_results.update(parsed)
+                                except Exception as e:
+                                    st.warning(f"Could not parse AI analysis: {e}")
+                            # Extract and normalize client deadline date
+                            if "client_deadline" in analysis_results:
+                                import re
+                                from datetime import datetime
+                                deadline_str = analysis_results["client_deadline"]
+                                match = re.search(r'(\d{1,2})(?:st|nd|rd|th)? of ([A-Za-z]+)', deadline_str)
+                                if match:
+                                    day = int(match.group(1))
+                                    month_str = match.group(2)
+                                    try:
+                                        month = datetime.strptime(month_str, '%B').month
+                                    except ValueError:
+                                        try:
+                                            month = datetime.strptime(month_str, '%b').month
+                                        except ValueError:
+                                            month = 7
+                                    year = datetime.now().year
+                                    try:
+                                        client_due_date = datetime(year, month, day)
+                                        analysis_results["client_due_date_formatted"] = client_due_date.strftime('%Y/%m/%d')
+                                    except ValueError:
+                                        # Invalid date, skip setting the formatted date
+                                        pass
+                                else:
+                                    match = re.search(r'(\d{1,2})(?:st|nd|rd|th)? ?([A-Za-z]+)', deadline_str)
+                                    if match:
+                                        day = int(match.group(1))
+                                        month_str = match.group(2)
+                                        try:
+                                            month = datetime.strptime(month_str, '%B').month
+                                        except ValueError:
+                                            try:
+                                                month = datetime.strptime(month_str, '%b').month
+                                            except ValueError:
+                                                month = 7
+                                        year = datetime.now().year
+                                        try:
+                                            client_due_date = datetime(year, month, day)
+                                            analysis_results["client_due_date_formatted"] = client_due_date.strftime('%Y/%m/%d')
+                                        except ValueError:
+                                            # Invalid date, skip setting the formatted date
+                                            pass
+                            # Extract number of images for design units and set service category
+                            if "services" in analysis_results:
+                                match = re.search(r'(\d+)\s*AI\s*Images?', analysis_results["services"], re.IGNORECASE)
+                                if match:
+                                    analysis_results["design_units"] = int(match.group(1))
+                                    analysis_results["service_category_1"] = "AI Image Generation"
                             # Store analysis results
                             st.session_state.email_analysis = analysis_results
-                            st.session_state.email_analysis_done = True
                             st.session_state.email_analysis_skipped = False
                             st.rerun()
                 else:
@@ -3163,20 +3429,68 @@ def email_analysis_page():
     # Display analysis results if available
     if "email_analysis" in st.session_state and not st.session_state.get("email_analysis_skipped", True):
         analysis_results = st.session_state.email_analysis
-        
-        def display_analysis_summary():
-            if isinstance(analysis_results, dict):
-                for key, value in analysis_results.items():
-                    if value and key != "error" and key != "raw_analysis":
+        # DEBUG: Show session state for troubleshooting
+        st.markdown("---")
+        st.markdown("### Debug: Session State Snapshot")
+        st.write(dict(st.session_state))
+        st.markdown("---")
+        # New: Show a confirmation/preview form for AI suggestions
+        if "email_analysis_confirmed" not in st.session_state:
+            with st.form("ai_suggestion_confirmation_form"):
+                st.subheader("Review and Confirm AI Suggestions")
+                parent_task_title = st.text_input("Parent Task Title", value=analysis_results.get("parent_task_title", ""))
+                client_deadline = st.text_input("Client Deadline", value=analysis_results.get("client_deadline", ""))
+                suggested_internal_deadline = st.text_input("Suggested Internal Deadline", value=analysis_results.get("suggested_internal_deadline", ""))
+                target_language = st.text_input("Target Language", value=analysis_results.get("target_language", ""))
+                service_category_1 = st.text_input("Service Category 1", value=analysis_results.get("service_category_1", ""))
+                service_category_2 = st.text_input("Service Category 2", value=analysis_results.get("service_category_2", ""))
+                design_units = st.text_input("Design Units", value=analysis_results.get("design_units", ""))
+                requirements = st.text_area("Special Requirements", value=analysis_results.get("requirements", ""))
+                urgency = st.text_input("Urgency", value=analysis_results.get("urgency", ""))
+                # Subtask suggestions as editable list
+                subtask_suggestions = analysis_results.get("subtask_suggestions", [])
+                st.markdown("**Subtask Suggestions:**")
+                edited_subtasks = []
+                for i, sub in enumerate(subtask_suggestions):
+                    edited = st.text_input(f"Subtask {i+1}", value=sub, key=f"ai_subtask_{i}")
+                    edited_subtasks.append(edited)
+                # Add ability to add/remove subtasks
+                new_subtask = st.text_input("Add New Subtask", value="", key="ai_new_subtask")
+                if new_subtask:
+                    edited_subtasks.append(new_subtask)
+                confirm = st.form_submit_button("Confirm and Use These Suggestions")
+                if confirm:
+                    # Store confirmed values in session_state for use in parent/subtask forms
+                    st.session_state.email_analysis_confirmed = {
+                        "parent_task_title": parent_task_title,
+                        "client_deadline": client_deadline,
+                        "suggested_internal_deadline": suggested_internal_deadline,
+                        "target_language": target_language,
+                        "service_category_1": service_category_1,
+                        "service_category_2": service_category_2,
+                        "design_units": design_units,
+                        "requirements": requirements,
+                        "urgency": urgency,
+                        "subtask_suggestions": [s for s in edited_subtasks if s.strip()]
+                    }
+                    st.session_state.email_analysis = {**analysis_results, **st.session_state.email_analysis_confirmed}
+                    st.session_state.email_analysis_done = True
+                    st.session_state.email_analysis_skipped = False
+                    st.rerun()
+        else:
+            # Already confirmed, show summary and continue button
+            def display_analysis_summary():
+                confirmed = st.session_state.email_analysis_confirmed
+                for key, value in confirmed.items():
+                    if key == "subtask_suggestions":
+                        st.markdown("**Subtask Suggestions:**")
+                        for i, sub in enumerate(value):
+                            st.markdown(f"{i+1}. {sub}")
+                    else:
                         st.markdown(f"**{key.replace('_', ' ').title()}:** {value}")
-            else:
-                st.write(analysis_results)
-
-        create_glass_card(content=display_analysis_summary, title="Email Analysis Summary", icon="📧")
-                
-        # Continue button - outside any form
-        if st.button("Continue to Parent Task Details", type="primary"):
-            st.rerun()
+            create_glass_card(content=display_analysis_summary, title="Confirmed Email Analysis", icon="📧")
+            if st.button("Continue to Parent Task Details", type="primary"):
+                st.rerun()
 
 def google_auth_page():
     st.title("Google Services Authentication")
@@ -3594,8 +3908,35 @@ def designer_selection_page():
                 available_df = options['available']
                 unavailable_df = options['unavailable']
                 
-                # Replace the designer cards section in designer_selection_page()
-
+                # Check for reshuffling opportunities
+                reshuffling_suggestion = suggest_reshuffling(
+                    available_df, 
+                    unavailable_df,
+                    options['due_date'],
+                    options['duration']
+                )
+                
+                if reshuffling_suggestion:
+                    st.markdown("### 🔄 Task Reshuffling Opportunity")
+                    st.markdown(f"""
+                    **Better Match Available!**  
+                    Designer {reshuffling_suggestion['designer_name']} has a {reshuffling_suggestion['match_score']:.0f}% match score 
+                    (vs best available: {reshuffling_suggestion['best_available_score']:.0f}%)
+                    
+                    **Current Schedule:**
+                    - Currently working on: {reshuffling_suggestion['blocking_task_name']}
+                    - Their task deadline: {reshuffling_suggestion['blocking_task_deadline']}
+                    - Your task deadline: {reshuffling_suggestion['current_task_deadline']}
+                    
+                    **Suggestion:**  
+                    Consider reshuffling tasks to assign this designer to your task, as they are a better match.
+                    Their current task can be rescheduled since it has a later deadline.
+                    """)
+                    
+                    if st.button("🔄 Proceed with Reshuffling", key=f"reshuffle_{task_id}"):
+                        st.session_state[f"reshuffle_{task_id}"] = reshuffling_suggestion
+                        st.rerun()
+                
                 if not available_df.empty:
                     st.markdown("### 🎯 Recommended Designers")
                     
