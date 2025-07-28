@@ -5,6 +5,7 @@ import pandas as pd
 from datetime import datetime, timedelta
 import logging
 from typing import Dict, List, Tuple, Optional, Any, Union
+import re
 
 # ────────────────────────────────────────────────────────────
 # Only load .env in local dev, skip on Streamlit Cloud
@@ -364,7 +365,7 @@ def create_task(models: xmlrpc.client.ServerProxy, uid: int, employee_id: int,
                     update_data['role_id'] = roles[0]['id']
                 # Add before creating the planning slot
                 planning_fields = get_available_fields(models, uid, 'planning.slot')
-                st.write("Available planning.slot fields:", list(planning_fields.keys()))
+                logger.info(f"Available planning.slot fields: {list(planning_fields.keys())}")
 
                 # Try to update with parent/child references if they exist
                 if task_id:
@@ -373,6 +374,9 @@ def create_task(models: xmlrpc.client.ServerProxy, uid: int, employee_id: int,
                         update_data['x_studio_sub_task_link'] = task_id
                     elif 'task_id' in planning_fields:
                         update_data['task_id'] = task_id
+                    elif 'x_studio_sub_task_1' in planning_fields:
+                        update_data['x_studio_sub_task_1'] = task_id
+                        logger.info(f"Set x_studio_sub_task_1 to {task_id} on planning.slot {slot_id}")
                     
                 if parent_task_id:
                     # Check if field exists before adding it
@@ -1138,7 +1142,8 @@ def update_task_designer(models, uid, task_id, designer_name, assignment_note=No
                 {'fields': ['description']}
             )
             current_description = current_task[0].get('description', '') if current_task else ''
-            
+            # Remove any and all previous designer assignment info using regex
+            current_description = re.split(r'--- Designer Assignment ---', current_description)[0].strip()
             # Append new note
             update_values['description'] = f"{current_description}\n\n{assignment_note}"
         else:
@@ -1222,3 +1227,21 @@ def get_available_fields(models, uid, model_name='planning.slot'):
     except Exception as e:
         logger.error(f"Error getting fields for {model_name}: {e}")
         return {}
+
+def get_all_users_odoo(models, uid):
+    """
+    Retrieves a list of all users from Odoo for use in dropdowns (e.g., QA Person).
+    Returns a list of (id, name) tuples.
+    """
+    try:
+        records = models.execute_kw(
+            st.session_state.odoo_credentials['db'], uid, st.session_state.odoo_credentials['password'],
+            'res.users', 'search_read',
+            [[]],
+            {'fields': ['id', 'name']}
+        )
+        return [(rec['id'], rec['name']) for rec in records if rec.get('id') and rec.get('name')]
+    except Exception as e:
+        logger.error(f"Error fetching all users for QA Person: {e}", exc_info=True)
+        st.warning("Error fetching users for QA Person.")
+        return []
